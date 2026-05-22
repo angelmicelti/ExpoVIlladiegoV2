@@ -1,0 +1,52 @@
+{
+  "name": "ExpoVilladiego",
+  "short_name": "ExpoVilladiego",
+  "description": "Gestión organizativa de la ExpoVilladiego. Preinscripción de productos finales, gestión de stands, informes y coordinación docente del IES Peñaflor (Sevilla).",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f8fafc",
+  "theme_color": "#4338ca",
+  "lang": "es",
+  "dir": "ltr",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "favicon-16.png",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Añadir Producto",
+      "short_name": "Añadir",
+      "description": "Preinscribir un nuevo producto final",
+      "url": "./index.html?action=add"
+    }
+  ]
+}

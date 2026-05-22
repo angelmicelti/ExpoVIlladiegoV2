@@ -2,8 +2,13 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EXPOVILLADIEGO 2026</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="color-scheme" content="light">
+    <meta name="format-detection" content="email=no">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <title>ExpoVilladiego</title>
     <!-- ===== FIREBASE SDK (Compat para uso en HTML sin build) ===== -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -38,23 +43,28 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght=300;400;500;600;700;800&display=swap');
-        body {
+        * { -webkit-tap-highlight-color: transparent; }
+        html, body {
             font-family: 'Outfit', sans-serif;
+            min-height: 100dvh;
+            min-height: -webkit-fill-available;
+            overscroll-behavior: none;
         }
-        /* Custom scrollbar para la tabla */
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
+        body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); padding-bottom: env(safe-area-inset-bottom); }
+        * { scrollbar-width: thin; scrollbar-color: #cbd5e1 #f1f5f9; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .touch-scroll { -webkit-overflow-scrolling: touch; }
+        .tabs-scroll { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+        .tabs-scroll::-webkit-scrollbar { display: none; }
+        @media (max-width: 640px) {
+            .modal-responsive { inset: 0 !important; padding: 0 !important; border-radius: 0 !important; max-width: 100% !important; height: 100dvh; display: flex; flex-direction: column; }
+            .modal-responsive > div:last-child { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
         }
-        ::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
+        @supports (-webkit-touch-callout: none) {
+            input[type="text"], select, textarea { font-size: 16px !important; }
         }
 
         /* Estilos específicos de impresión para asegurar PDF perfecto */
@@ -118,18 +128,18 @@
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+<body class="bg-slate-50 text-slate-800 flex flex-col">
 
     <!-- HEADER DE LA APLICACIÓN -->
     <header id="app-header" class="bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-800 text-white shadow-md">
-        <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
+        <div class="max-w-7xl mx-auto px-4 py-4 sm:py-6 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-3 sm:gap-4" style="padding-top: max(1rem, env(safe-area-inset-top));">
             <div class="flex items-center gap-3">
-                <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm border border-white/20">
-                    <i data-lucide="layers" class="h-8 w-8 text-yellow-300"></i>
+                <div class="bg-white/10 p-2 sm:p-2.5 rounded-xl backdrop-blur-sm border border-white/20">
+                    <i data-lucide="layers" class="h-6 w-6 sm:h-8 sm:w-8 text-yellow-300"></i>
                 </div>
                 <div>
-                    <span class="text-xs font-bold tracking-widest text-indigo-200 uppercase">Gestión de la</span>
-                    <h1 id="titulo-exposicion" class="text-2xl sm:text-3xl font-extrabold tracking-tight">EXPOVILLADIEGO 2026</h1>
+                    <span class="text-[10px] sm:text-xs font-bold tracking-widest text-indigo-200 uppercase">Gestión de la</span>
+                    <h1 id="titulo-exposicion" class="text-xl sm:text-3xl font-extrabold tracking-tight leading-tight">EXPOVILLADIEGO 2026</h1>
                 </div>
             </div>
             <div class="flex items-center gap-3 w-full md:w-auto justify-end flex-wrap">
@@ -205,58 +215,58 @@
         <!-- RESUMEN DE MÉTRICAS (STAT CARDS) -->
         <section id="kpi-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <!-- Total Proyectos -->
-            <div onclick="abrirModalVistaPrevia('productos')" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all active:scale-[0.98]">
-                <div class="p-3 bg-blue-50 text-blue-600 rounded-xl">
-                    <i data-lucide="file-text" class="h-6 w-6"></i>
+            <div onclick="abrirModalVistaPrevia('productos')" class="bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 sm:gap-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all active:scale-[0.98]">
+                <div class="p-2.5 sm:p-3 bg-blue-50 text-blue-600 rounded-xl">
+                    <i data-lucide="file-text" class="h-5 w-5 sm:h-6 sm:w-6"></i>
                 </div>
                 <div class="min-w-0">
-                    <p class="text-sm font-medium text-slate-500">Total Productos</p>
-                    <h3 id="stat-total" class="text-2xl font-bold text-slate-900">-</h3>
+                    <p class="text-xs sm:text-sm font-medium text-slate-500">Total Productos</p>
+                    <h3 id="stat-total" class="text-xl sm:text-2xl font-bold text-slate-900">-</h3>
                 </div>
                 <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 shrink-0 ml-auto"></i>
             </div>
             <!-- Tipos Distintos -->
-            <div onclick="abrirModalVistaPrevia('tipos')" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all active:scale-[0.98]">
-                <div class="p-3 bg-amber-50 text-amber-600 rounded-xl">
-                    <i data-lucide="tag" class="h-6 w-6"></i>
+            <div onclick="abrirModalVistaPrevia('tipos')" class="bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 sm:gap-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all active:scale-[0.98]">
+                <div class="p-2.5 sm:p-3 bg-amber-50 text-amber-600 rounded-xl">
+                    <i data-lucide="tag" class="h-5 w-5 sm:h-6 sm:w-6"></i>
                 </div>
                 <div class="min-w-0">
-                    <p class="text-sm font-medium text-slate-500">Tipo de Producto</p>
-                    <h3 id="stat-tipos" class="text-2xl font-bold text-slate-900">-</h3>
+                    <p class="text-xs sm:text-sm font-medium text-slate-500">Tipo de Producto</p>
+                    <h3 id="stat-tipos" class="text-xl sm:text-2xl font-bold text-slate-900">-</h3>
                 </div>
                 <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 shrink-0 ml-auto"></i>
             </div>
             <!-- Docentes Implicados -->
-            <div onclick="abrirModalVistaPrevia('profesores')" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all active:scale-[0.98]">
-                <div class="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
-                    <i data-lucide="users" class="h-6 w-6"></i>
+            <div onclick="abrirModalVistaPrevia('profesores')" class="bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 sm:gap-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all active:scale-[0.98]">
+                <div class="p-2.5 sm:p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                    <i data-lucide="users" class="h-5 w-5 sm:h-6 sm:w-6"></i>
                 </div>
                 <div class="min-w-0">
-                    <p class="text-sm font-medium text-slate-500">Docentes Responsables</p>
-                    <h3 id="stat-profesores" class="text-2xl font-bold text-slate-900">-</h3>
+                    <p class="text-xs sm:text-sm font-medium text-slate-500">Docentes Responsables</p>
+                    <h3 id="stat-profesores" class="text-xl sm:text-2xl font-bold text-slate-900">-</h3>
                 </div>
                 <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 shrink-0 ml-auto"></i>
             </div>
             <!-- Espacios Requeridos -->
-            <div onclick="abrirModalVistaPrevia('espacios')" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all active:scale-[0.98]">
-                <div class="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-                    <i data-lucide="map-pin" class="h-6 w-6"></i>
+            <div onclick="abrirModalVistaPrevia('espacios')" class="bg-white p-3 sm:p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 sm:gap-4 cursor-pointer hover:shadow-md hover:border-indigo-200 transition-all active:scale-[0.98]">
+                <div class="p-2.5 sm:p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                    <i data-lucide="map-pin" class="h-5 w-5 sm:h-6 sm:w-6"></i>
                 </div>
                 <div class="min-w-0">
-                    <p class="text-sm font-medium text-slate-500">Aulas / Espacios</p>
-                    <h3 id="stat-espacios" class="text-2xl font-bold text-slate-900">-</h3>
+                    <p class="text-xs sm:text-sm font-medium text-slate-500">Aulas / Espacios</p>
+                    <h3 id="stat-espacios" class="text-xl sm:text-2xl font-bold text-slate-900">-</h3>
                 </div>
                 <i data-lucide="chevron-right" class="h-4 w-4 text-slate-300 shrink-0 ml-auto"></i>
             </div>
         </section>
 
         <!-- SELECTOR DE VISTA PRINCIPAL -->
-        <div class="flex border-b border-slate-200">
-            <button id="tab-tabla" onclick="cambiarVistaPrincipal('tabla')" class="px-6 py-3 font-bold text-sm border-b-2 border-indigo-600 text-indigo-600 transition flex items-center gap-2">
+        <div class="flex border-b border-slate-200 tabs-scroll overflow-x-auto">
+            <button id="tab-tabla" onclick="cambiarVistaPrincipal('tabla')" class="px-4 sm:px-6 py-3 font-bold text-sm border-b-2 border-indigo-600 text-indigo-600 transition flex items-center gap-2 whitespace-nowrap">
                 <i data-lucide="table-properties" class="h-4 w-4"></i>
                 Base de Datos y Registro
             </button>
-            <button id="tab-informes" onclick="cambiarVistaPrincipal('informes')" class="px-6 py-3 font-bold text-sm border-b-2 border-transparent text-slate-500 hover:text-indigo-600 hover:border-slate-300 transition flex items-center gap-2">
+            <button id="tab-informes" onclick="cambiarVistaPrincipal('informes')" class="px-4 sm:px-6 py-3 font-bold text-sm border-b-2 border-transparent text-slate-500 hover:text-indigo-600 hover:border-slate-300 transition flex items-center gap-2 whitespace-nowrap">
                 <i data-lucide="bar-chart-3" class="h-4 w-4"></i>
                 Informes Dinámicos
                 <span class="bg-indigo-100 text-indigo-800 text-xs px-2 py-0.5 rounded-full font-bold">Nuevo</span>
@@ -300,7 +310,7 @@
             </section>
 
             <section class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                <div class="overflow-x-auto w-full">
+                <div class="overflow-x-auto w-full touch-scroll" style="min-width: 700px;">
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-slate-50/75 border-b border-slate-100 text-slate-600 text-xs font-bold uppercase tracking-wider">
@@ -369,7 +379,7 @@
         <!-- VISTA 2: PANEL DE INFORMES -->
         <div id="vista-informes" class="hidden space-y-6">
             <div class="flex flex-col lg:flex-row gap-4 items-center justify-between">
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 bg-slate-100 p-1.5 rounded-xl w-full lg:w-auto">
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-1.5 bg-slate-100 p-1.5 rounded-xl w-full lg:w-auto">
                     <button onclick="cambiarReporteActivo('reporte-tipos')" id="btn-reporte-tipos" class="reporte-tab-btn py-2.5 px-4 rounded-lg font-bold text-xs sm:text-sm text-center transition bg-white text-indigo-700 shadow-sm flex items-center justify-center gap-2">
                         <i data-lucide="shapes" class="h-4 w-4"></i>
                         Proyectos por Tipo
@@ -462,7 +472,7 @@
 
     <!-- MODAL DE VISTA PREVIA DE KPI -->
     <div id="modal-kpi-previa" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 modal-responsive">
             <div id="kpi-previa-header" class="bg-gradient-to-r from-blue-700 to-indigo-800 text-white px-6 py-4 flex justify-between items-center">
                 <h2 id="kpi-previa-titulo" class="text-lg font-bold flex items-center gap-2"></h2>
                 <button onclick="cerrarModalVistaPrevia()" class="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition"><i data-lucide="x" class="h-5 w-5"></i></button>
@@ -708,7 +718,7 @@
 
     <!-- MODAL PARA AÑADIR / EDITAR PRODUCTO -->
     <div id="modal-producto" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 modal-responsive">
             <div class="bg-gradient-to-r from-indigo-700 to-violet-800 text-white px-6 py-4 flex justify-between items-center">
                 <h2 id="modal-titulo" class="text-lg font-bold">Añadir Nuevo Producto</h2>
                 <button onclick="cerrarModal()" class="text-white/80 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition"><i data-lucide="x" class="h-5 w-5"></i></button>
@@ -719,7 +729,7 @@
                     <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre del Producto Final *</label>
                     <input type="text" id="form-nombre" required class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none">
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Producto</label>
                         <input type="text" id="form-tipo" placeholder="Maqueta, Vídeo..." class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none">
@@ -733,7 +743,7 @@
                     <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Profesorado Responsable *</label>
                     <input type="text" id="form-profesor" required placeholder="Nombre del docente" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none">
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Espacio Necesario</label>
                         <input type="text" id="form-space" placeholder="1 mesa..." id="form-espacioNecesario" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none">
@@ -743,7 +753,7 @@
                         <input type="text" id="form-espacioExposicion" placeholder="Aula TEC..." class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none">
                     </div>
                 </div>
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <div class="flex justify-between items-center mb-1">
                             <label class="block text-xs font-bold text-slate-500 uppercase">Alumnado (Máx. 2)</label>
@@ -756,9 +766,9 @@
                         <input type="text" id="form-clase" placeholder="4º ESO..." class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-500 outline-none">
                     </div>
                 </div>
-                <div class="flex justify-end gap-2 pt-4 border-t border-slate-100">
-                    <button type="button" onclick="cerrarModal()" class="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg text-sm font-semibold">Cancelar</button>
-                    <button type="submit" id="btn-guardar" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold shadow-md shadow-indigo-600/10">Guardar</button>
+                <div class="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-4 border-t border-slate-100">
+                    <button type="button" onclick="cerrarModal()" class="w-full sm:w-auto px-4 py-2.5 text-slate-500 hover:bg-slate-100 rounded-lg text-sm font-semibold">Cancelar</button>
+                    <button type="submit" id="btn-guardar" class="w-full sm:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold shadow-md shadow-indigo-600/10">Guardar</button>
                 </div>
             </form>
         </div>

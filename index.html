@@ -1730,273 +1730,183 @@
         }
 
         // =====================================================================
-        // MOTOR POSICIONAL DE ANÁLISIS DE TABLAS PDF (USA COORDENADAS X/Y DE PDF.JS)
+        // MOTOR POSICIONAL V3: USA ORDINALES (Nº) COMO DELIMITADORES DE FILA
+        // No depende de agrupamiento Y (los PDFs del dossier tienen Y-plano)
         // =====================================================================
         function analizarTextoPDFPosicional(allItems) {
             if (!allItems || allItems.length === 0) return { proyectos: [] };
-            let proyectos = [];
-            
-            // === PASO 1: Agrupar items en líneas horizontales por proximidad Y ===
-            allItems.sort((a, b) => a.y - b.y || a.x - b.x);
-            
-            // Calcular umbral de agrupación en Y - buscar el SALTO NATURAL en la distribución bimodal
-            // La distribución tiene dos modos: gaps pequeños (intra-fila) y gaps grandes (entre-filas)
-            let yDiffs = [];
-            for (let i = 1; i < allItems.length; i++) {
-                if (allItems[i].page === allItems[i-1].page) {
-                    let dy = Math.abs(allItems[i].y - allItems[i-1].y);
-                    if (dy > 0.3) yDiffs.push(dy);
-                }
+
+            // === PASO 1: Agrupar items por página ===
+            let pageMap = {};
+            for (let item of allItems) {
+                if (!pageMap[item.page]) pageMap[item.page] = [];
+                pageMap[item.page].push(item);
             }
-            yDiffs.sort((a, b) => a - b);
+
+            // === PASO 2: En cada página, encontrar ordinales y dividir en filas ===
+            let allRows = []; // Cada elemento = array de items (sin el ordinal) de un proyecto
             
-            // Logs de percentiles para debug
-            if (yDiffs.length > 0) {
-                console.log('[PDF Import] Y-diffs percentiles:',
-                    'p50=' + yDiffs[Math.floor(yDiffs.length * 0.5)].toFixed(1),
-                    'p75=' + yDiffs[Math.floor(yDiffs.length * 0.75)].toFixed(1),
-                    'p90=' + yDiffs[Math.floor(yDiffs.length * 0.9)].toFixed(1),
-                    'p95=' + yDiffs[Math.floor(yDiffs.length * 0.95)].toFixed(1),
-                    'p99=' + yDiffs[Math.floor(yDiffs.length * 0.99)].toFixed(1),
-                    'max=' + yDiffs[yDiffs.length - 1].toFixed(1));
-            }
-            
-            // Buscar el mayor salto relativo a partir del percentil 70 (separación natural entre modos)
-            let rowThreshold = 12; // fallback
-            let maxJumpRatio = 0;
-            let bestJumpIdx = 0;
-            let searchStart = Math.floor(yDiffs.length * 0.7);
-            
-            for (let i = searchStart; i < yDiffs.length - 1; i++) {
-                let ratio = yDiffs[i + 1] / (yDiffs[i] + 0.01);
-                if (ratio > maxJumpRatio) {
-                    maxJumpRatio = ratio;
-                    bestJumpIdx = i;
-                }
-            }
-            
-            if (maxJumpRatio > 1.5) {
-                // Salto claro encontrado: usar el punto medio como umbral
-                rowThreshold = (yDiffs[bestJumpIdx] + yDiffs[bestJumpIdx + 1]) / 2;
-            } else {
-                // No hay salto claro: usar percentil alto
-                rowThreshold = yDiffs[Math.floor(yDiffs.length * 0.92)] || 12;
-            }
-            rowThreshold = Math.max(rowThreshold, 6);
-            console.log('[PDF Import] rowThreshold calculado:', rowThreshold.toFixed(1), '(salto ratio:', maxJumpRatio.toFixed(1), ')');
-            
-            // Agrupar items en líneas Y
-            let lines = [];
-            let currentLine = [allItems[0]];
-            for (let i = 1; i < allItems.length; i++) {
-                if (allItems[i].page === currentLine[0].page &&
-                    Math.abs(allItems[i].y - currentLine[0].y) <= rowThreshold) {
-                    currentLine.push(allItems[i]);
-                } else {
-                    currentLine.sort((a, b) => a.x - b.x);
-                    lines.push(currentLine);
-                    currentLine = [allItems[i]];
-                }
-            }
-            if (currentLine.length > 0) {
-                currentLine.sort((a, b) => a.x - b.x);
-                lines.push(currentLine);
-            }
-            
-            console.log('[PDF Import] Lineas Y detectadas:', lines.length);
-            
-            // === PASO 2: Detectar la fila de cabecera (mejor coincidencia global) ===
-            let headerLineIdx = -1;
-            let headerKeywords = ['nombre', 'producto', 'tipo', 'materia', 'profesor', 'responsable', 'alumnado', 'espacio', 'necesario', 'exposici', 'lugar', 'evaluaci', 'n\u00ba', 'no'];
-            
-            // Buscar en TODAS las líneas la que tenga más keywords de cabecera
-            let bestLineScore = 0;
-            let bestLineIdx = -1;
-            for (let i = 0; i < lines.length; i++) {
-                let text = lines[i].map(it => it.str).join(' ').toLowerCase();
-                let matches = headerKeywords.filter(k => text.includes(k));
-                if (matches.length > bestLineScore) {
-                    bestLineScore = matches.length;
-                    bestLineIdx = i;
-                }
-            }
-            console.log('[PDF Import] Mejor candidata cabecera: línea', bestLineIdx, 'con', bestLineScore, 'keywords');
-            
-            if (bestLineScore >= 3) {
-                headerLineIdx = bestLineIdx;
-            }
-            
-            // Fusionar líneas consecutivas con keywords de cabecera
-            if (headerLineIdx !== -1) {
-                let headerEnd = headerLineIdx;
-                while (headerEnd + 1 < Math.min(lines.length, headerLineIdx + 6)) {
-                    let nextText = lines[headerEnd + 1].map(it => it.str).join(' ').toLowerCase();
-                    let nextMatches = headerKeywords.filter(k => nextText.includes(k));
-                    if (nextMatches.length >= 1) {
-                        headerEnd++;
-                    } else {
-                        break;
+            for (let p = 1; p <= 999; p++) {
+                let items = pageMap[p];
+                if (!items || items.length === 0) break;
+
+                // Ordenar por Y (arriba→abajo) y luego X (izquierda→derecha)
+                items.sort((a, b) => a.y - b.y || a.x - b.x);
+
+                // Detectar la región X de los ordinales (columna Nº, la más a la izquierda)
+                let xSorted = [...items].sort((a, b) => a.x - b.x);
+                let min_X = xSorted[0].x;
+                let ordinal_X_max = min_X + 35; // Los ordinales están en los primeros ~35pt
+
+                // Encontrar items que sean números puros 1-200 y estén en la región izquierda
+                let ordinalIndices = [];
+                for (let i = 0; i < items.length; i++) {
+                    let s = items[i].str.trim();
+                    if (/^\d{1,3}$/.test(s) && parseInt(s) >= 1 && parseInt(s) <= 200 && items[i].x <= ordinal_X_max) {
+                        ordinalIndices.push(i);
                     }
                 }
-                if (headerEnd > headerLineIdx) {
-                    console.log('[PDF Import] Cabecera multilínea: líneas', headerLineIdx, 'a', headerEnd);
-                    let merged = [];
-                    for (let j = headerLineIdx; j <= headerEnd; j++) merged = merged.concat(lines[j]);
-                    merged.sort((a, b) => a.x - b.x);
-                    lines[headerLineIdx] = merged;
-                    lines.splice(headerLineIdx + 1, headerEnd - headerLineIdx);
+
+                // Eliminar duplicados consecutivos (mismo número repetido)
+                let unique = [];
+                for (let i = 0; i < ordinalIndices.length; i++) {
+                    if (i === 0 || items[ordinalIndices[i]].str !== items[ordinalIndices[i - 1]].str) {
+                        unique.push(ordinalIndices[i]);
+                    }
+                }
+
+                console.log('[PDF Import] Página ' + p + ': ' + items.length + ' items, ' + unique.length + ' ordinales (X_max=' + ordinal_X_max.toFixed(0) + ')');
+
+                // Dividir en filas: cada ordinal marca el inicio de una nueva fila
+                for (let o = 0; o < unique.length; o++) {
+                    let start = unique[o] + 1; // excluir el ordinal
+                    let end = (o + 1 < unique.length) ? unique[o + 1] : items.length;
+                    if (end > start) {
+                        allRows.push(items.slice(start, end));
+                    }
                 }
             }
-            
-            if (headerLineIdx === -1) {
-                console.warn('[PDF Import] No se encontro la fila de cabecera (mejor score:', bestLineScore, ')');
-                console.log('[PDF Import] Primeras 20 líneas para debug:');
-                for (let i = 0; i < Math.min(lines.length, 20); i++) {
-                    console.log('  Lin', i, '(' + lines[i].length + ' items):', lines[i].slice(0, 10).map(it => it.str).join(' | '));
+
+            console.log('[PDF Import] Total filas por ordinal:', allRows.length);
+
+            if (allRows.length === 0) {
+                console.warn('[PDF Import] No se encontraron ordinales. Mostrando primeros 20 items por X:');
+                let sorted = [...allItems].sort((a, b) => a.x - b.x || a.y - b.y);
+                for (let i = 0; i < Math.min(20, sorted.length); i++) {
+                    console.log('  [' + i + '] X=' + sorted[i].x.toFixed(0) + ' Y=' + sorted[i].y.toFixed(0) + ' p' + sorted[i].page + ': "' + sorted[i].str + '"');
                 }
                 return { proyectos: [] };
             }
-            
-            console.log('[PDF Import] Cabecera en linea:', headerLineIdx, 'Texto:', lines[headerLineIdx].map(it => it.str).join(' | '));
-            
-            // === PASO 3: Detectar columnas de la cabecera ===
-            // Agrupar items de cabecera que pertenecen a la misma columna
-            let headerItems = lines[headerLineIdx];
-            
-            // Calcular gaps entre items consecutivos en la cabecera
-            let headerGaps = [];
-            for (let i = 1; i < headerItems.length; i++) {
-                let prevRight = headerItems[i-1].x + Math.max(headerItems[i-1].w, headerItems[i-1].str.length * 3);
-                let gap = headerItems[i].x - prevRight;
-                if (gap >= 0) headerGaps.push(gap);
+
+            // === PASO 3: Detectar límites de columnas usando X-gaps ===
+            // Ordenar TODOS los items por X y encontrar los 8 gaps más grandes (9 columnas → 8 separadores)
+            let allXSorted = [...allItems].sort((a, b) => a.x - b.x);
+            let gaps = [];
+            for (let i = 1; i < allXSorted.length; i++) {
+                let prevRight = allXSorted[i - 1].x + Math.max(allXSorted[i - 1].w || 0, allXSorted[i - 1].str.length * 4);
+                let gap = allXSorted[i].x - prevRight;
+                if (gap > 0) gaps.push({ gap: gap, x: (allXSorted[i].x + prevRight) / 2 });
             }
-            headerGaps.sort((a, b) => a - b);
-            let wordGap = headerGaps.length > 0 ? headerGaps[Math.floor(headerGaps.length * 0.3)] : 2;
-            let colGapThreshold = Math.max(wordGap * 2.5, 8);
-            
-            // Agrupar items de cabecera en clusters (cada cluster = una columna)
-            let headerClusters = [];
-            let cluster = { items: [headerItems[0]], left: headerItems[0].x };
-            for (let i = 1; i < headerItems.length; i++) {
-                let prevRight = headerItems[i-1].x + Math.max(headerItems[i-1].w, headerItems[i-1].str.length * 3);
-                let gap = headerItems[i].x - prevRight;
-                
-                if (gap < colGapThreshold) {
-                    cluster.items.push(headerItems[i]);
-                } else {
-                    cluster.right = prevRight;
-                    headerClusters.push(cluster);
-                    cluster = { items: [headerItems[i]], left: headerItems[i].x };
-                }
+            gaps.sort((a, b) => b.gap - a.gap);
+
+            // Los 8 gaps más grandes = separadores entre columnas
+            let boundaries = gaps.slice(0, 8).map(g => g.x).sort((a, b) => a - b);
+
+            // Crear rangos de columnas
+            let colRanges = [];
+            let prev = 0;
+            for (let bx of boundaries) {
+                colRanges.push([prev, bx]);
+                prev = bx;
             }
-            cluster.right = headerItems[headerItems.length - 1].x + Math.max(headerItems[headerItems.length - 1].w, headerItems[headerItems.length - 1].str.length * 3);
-            headerClusters.push(cluster);
-            
-            // Centro X de cada columna
-            let numCols = headerClusters.length;
-            let colCenters = headerClusters.map(c => (c.left + c.right) / 2);
-            
-            // Mapear texto de cabecera a campos del proyecto
-            let colFieldMap = new Array(numCols).fill(null);
-            for (let c = 0; c < numCols; c++) {
-                let hText = headerClusters[c].items.map(it => it.str).join(' ').toLowerCase();
-                if (hText.includes('nombre') || hText.includes('producto')) colFieldMap[c] = 'nombre';
-                else if (hText.includes('tipo')) colFieldMap[c] = 'tipo';
-                else if (hText.includes('materia')) colFieldMap[c] = 'materia';
-                else if (hText.includes('profesor') || hText.includes('responsable')) colFieldMap[c] = 'profesor';
-                else if (hText.includes('alumnado') || hText.includes('alumno')) colFieldMap[c] = 'alumnado';
-                else if (hText.includes('necesario') || (hText.includes('espacio') && !hText.includes('exposici'))) colFieldMap[c] = 'espacioNecesario';
-                else if (hText.includes('exposici') || hText.includes('lugar')) colFieldMap[c] = 'espacioExposicion';
-                else if (hText.includes('evaluaci')) colFieldMap[c] = 'clase';
-                else if (/^\d+$/.test(hText.trim()) || hText.includes('n\u00ba') || hText.includes('ordinal') || hText === 'no') colFieldMap[c] = 'numero';
+            colRanges.push([prev, 99999]);
+
+            console.log('[PDF Import] Columnas detectadas:', colRanges.length);
+            for (let c = 0; c < colRanges.length; c++) {
+                console.log('  Col ' + c + ': X=[' + colRanges[c][0].toFixed(0) + ', ' + (colRanges[c][1] === 99999 ? 'inf' : colRanges[c][1].toFixed(0)) + ']');
             }
-            
-            // Mapa inverso: campo -> índice de columna
-            let fieldColIndex = {};
-            for (let c = 0; c < numCols; c++) {
-                if (colFieldMap[c]) fieldColIndex[colFieldMap[c]] = c;
-            }
-            
-            console.log('[PDF Import] Columnas:', numCols, 'Mapa:', fieldColIndex);
-            console.log('[PDF Import] Cabeceras:', headerClusters.map(c => c.items.map(i => i.str).join(' ')));
-            
-            // === PASO 4: Asignar items de cada línea a columnas ===
-            function assignItemsToColumns(lineItems) {
-                let cells = new Array(numCols).fill('');
-                for (const item of lineItems) {
-                    let bestCol = 0, bestDist = Infinity;
-                    for (let c = 0; c < numCols; c++) {
-                        let dist = Math.abs(item.x - colCenters[c]);
-                        if (dist < bestDist) { bestDist = dist; bestCol = c; }
+
+            // === PASO 4: Mapear columnas a campos usando densidad de keywords ===
+            let fieldKeywords = {
+                nombre: ['nombre', 'producto', 'final'],
+                tipo: ['tipo'],
+                materia: ['materia'],
+                profesor: ['profesor', 'responsable', 'docente'],
+                alumnado: ['alumnado', 'alumno'],
+                espacioNecesario: ['necesario'],
+                espacioExposicion: ['exposici', 'lugar', 'ubicaci'],
+                clase: ['evaluaci', 'clase', 'curso']
+            };
+
+            // Contar keywords por columna
+            let colScores = colRanges.map(() => ({}));
+            for (let item of allItems) {
+                let lower = item.str.toLowerCase();
+                for (let c = 0; c < colRanges.length; c++) {
+                    if (item.x >= colRanges[c][0] && item.x < colRanges[c][1]) {
+                        for (let [field, kws] of Object.entries(fieldKeywords)) {
+                            if (kws.some(k => lower.includes(k))) {
+                                colScores[c][field] = (colScores[c][field] || 0) + 1;
+                            }
+                        }
+                        break;
                     }
-                    cells[bestCol] = cells[bestCol] ? cells[bestCol] + ' ' + item.str : item.str;
                 }
-                return cells.map(c => c.trim());
             }
-            
-            // === PASO 5: Construir filas lógicas (manejar celdas multilínea) ===
-            let logicalRows = [];
-            let prevCells = null;
-            
-            for (let i = headerLineIdx + 1; i < lines.length; i++) {
-                let cells = assignItemsToColumns(lines[i]);
-                let filledCount = cells.filter(c => c.length > 0).length;
-                
-                // Si pocas columnas llenas (<=2), es continuación de fila anterior
-                if (filledCount <= 2 && prevCells) {
-                    for (let c = 0; c < numCols; c++) {
-                        if (cells[c]) {
-                            prevCells[c] = prevCells[c] ? prevCells[c] + ' ' + cells[c] : cells[c];
+
+            // Asignar cada columna al campo con más coincidencias
+            let fieldColIndex = {};
+            for (let c = 0; c < colRanges.length; c++) {
+                let best = Object.entries(colScores[c]).sort((a, b) => b[1] - a[1])[0];
+                if (best && best[1] > 0) {
+                    fieldColIndex[best[0]] = c;
+                }
+            }
+
+            console.log('[PDF Import] Mapeo de campos:', JSON.stringify(fieldColIndex));
+
+            // === PASO 5: Parsear cada fila en un proyecto ===
+            let proyectos = [];
+
+            for (let rowItems of allRows) {
+                // Asignar items de la fila a columnas por posición X
+                let cells = colRanges.map(() => '');
+                for (let item of rowItems) {
+                    for (let c = 0; c < colRanges.length; c++) {
+                        if (item.x >= colRanges[c][0] && item.x < colRanges[c][1]) {
+                            cells[c] = cells[c] ? cells[c] + ' ' + item.str : item.str;
+                            break;
                         }
                     }
-                } else {
-                    if (prevCells) logicalRows.push(prevCells);
-                    prevCells = cells;
                 }
-            }
-            if (prevCells) logicalRows.push(prevCells);
-            
-            console.log('[PDF Import] Filas logicas:', logicalRows.length);
-            
-            // === PASO 6: Extraer proyectos de las filas lógicas ===
-            let nombreIdx = fieldColIndex.nombre !== undefined ? fieldColIndex.nombre : 0;
-            
-            for (const cells of logicalRows) {
-                let nombre = normalizarTexto(cells[nombreIdx] || '');
-                
-                // Saltar filas vacías o que no sean datos
+                cells = cells.map(c => normalizarTexto(c.trim()));
+
+                // Extraer campos
+                let nombre = cells[fieldColIndex.nombre] || '';
                 if (nombre.length < 3) continue;
+
                 let lower = nombre.toLowerCase();
-                if (lower.includes('nombre') || lower.includes('producto') ||
-                    lower.includes('preinscripci') || lower.includes('expovilladiego') ||
-                    lower.includes('total') || lower.includes('pagina') || lower.includes('resumen')) continue;
-                
-                let tipo = normalizarTipo(normalizarTexto(cells[fieldColIndex.tipo] || ''));
-                let materia = normalizarTexto(cells[fieldColIndex.materia] || '');
-                let profesor = normalizarTexto(cells[fieldColIndex.profesor] || '');
-                let alumnado = normalizarTexto(cells[fieldColIndex.alumnado] || '');
-                let espacioNecesario = normalizarTexto(cells[fieldColIndex.espacioNecesario] || '');
-                let espacioExposicion = normalizarTexto(cells[fieldColIndex.espacioExposicion] || '');
-                let clase = normalizarTexto(cells[fieldColIndex.clase] || '');
-                
-                // Solo requiere nombre (condición relajada)
-                if (!nombre) continue;
-                
+                if (['nombre', 'producto', 'preinscripci', 'expovilladiego', 'total', 'pagina', 'resumen'].some(k => lower.includes(k))) continue;
+
+                let tipo = normalizarTipo(cells[fieldColIndex.tipo] || '') || 'No especificado';
+                let materia = cells[fieldColIndex.materia] || '';
+                let profesor = cells[fieldColIndex.profesor] || '';
+                let alumnado = (cells[fieldColIndex.alumnado] || '').replace(/[?]/g, '').trim();
+                let espacioNecesario = cells[fieldColIndex.espacioNecesario] || 'N/A';
+                let espacioExposicion = cells[fieldColIndex.espacioExposicion] || 'Por asignar';
+                let clase = cells[fieldColIndex.clase] || 'N/A';
+
                 proyectos.push({
-                    nombre: nombre,
-                    tipo: tipo || "No especificado",
-                    materia: materia || "",
-                    profesor: profesor || "",
-                    alumnado: (alumnado === "?" || alumnado === "??") ? "" : alumnado,
-                    espacioNecesario: espacioNecesario || "N/A",
-                    espacioExposicion: espacioExposicion || "Por asignar",
-                    clase: clase || "N/A"
+                    nombre, tipo, materia, profesor, alumnado, espacioNecesario, espacioExposicion, clase
                 });
             }
-            
+
             console.log('[PDF Import] Proyectos extraidos:', proyectos.length);
             if (proyectos.length > 0) {
                 console.log('[PDF Import] Primer proyecto:', JSON.stringify(proyectos[0]));
+                if (proyectos.length > 1) {
+                    console.log('[PDF Import] Ultimo proyecto:', JSON.stringify(proyectos[proyectos.length - 1]));
+                }
             }
             return { proyectos };
         }

@@ -1443,7 +1443,7 @@
             else if (tipo === 'profesores') {
                 titulo.innerHTML = '<i data-lucide="users" class="h-5 w-5"></i> Docentes Responsables';
                 var mapa = {};
-                db.forEach(function(p) { if (p.profesor) p.profesor.split('/').forEach(function(pr) { var k = pr.trim(); if (k) { if (!mapa[k]) mapa[k] = 0; mapa[k]++; } }); });
+                db.forEach(function(p) { if (p.profesor) p.profesor.split(/[,\/]/).forEach(function(pr) { var k = pr.replace(/\s+/g, ' ').trim(); if (k && k !== 'No especificado') { if (!mapa[k]) mapa[k] = 0; mapa[k]++; } }); });
                 var items = Object.keys(mapa).map(function(k) { return { nombre: k, count: mapa[k] }; });
                 items.sort(function(a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
                 if (items.length === 0) { lista.classList.add('hidden'); vacio.classList.remove('hidden'); }
@@ -1503,7 +1503,7 @@
             const tipos = new Set(), profesores = new Set(), espacios = new Set();
             db.forEach(p => {
                 if (p.tipo) p.tipo.split('/').forEach(t => tipos.add(t.trim()));
-                if (p.profesor) p.profesor.split('/').forEach(pr => profesores.add(pr.trim()));
+                if (p.profesor) p.profesor.split(/[,\/]/).forEach(pr => { const k = pr.replace(/\s+/g, ' ').trim(); if (k && k !== 'No especificado') profesores.add(k); });
                 if (p.espacioExposicion) p.espacioExposicion.split('/').forEach(e => espacios.add(e.trim()));
             });
             document.getElementById('stat-tipos').innerText = tipos.size;
@@ -1525,7 +1525,7 @@
             getDatabase().forEach(p => {
                 if (p.tipo) p.tipo.split('/').forEach(t => tiposSet.add(t.trim()));
                 if (p.espacioExposicion) p.espacioExposicion.split('/').forEach(e => espaciosSet.add(e.trim()));
-                if (p.profesor) p.profesor.split('/').forEach(pr => profesoresSet.add(pr.trim()));
+                if (p.profesor) p.profesor.split(/[,\/]/).forEach(pr => { const k = pr.replace(/\s+/g, ' ').trim(); if (k && k !== 'No especificado') profesoresSet.add(k); });
             });
 
             Array.from(tiposSet).sort().forEach(t => selectTipo.innerHTML += `<option value="${t}">${t}</option>`);
@@ -1581,7 +1581,7 @@
                 else if (tipoLower.includes('demo') || tipoLower.includes('esco')) badgeColor = "bg-emerald-100 text-emerald-800 border-emerald-200";
                 else if (tipoLower.includes('víd') || tipoLower.includes('vid')) badgeColor = "bg-rose-100 text-rose-800 border-rose-200";
 
-                const listaProfes = (p.profesor || '').split('/').map(prof => `
+                const listaProfes = (p.profesor || '').split(/[,\/]/).map(prof => prof.replace(/\s+/g, ' ').trim()).filter(Boolean).map(prof => `
                     <span class="inline-flex items-center gap-1 text-slate-700 font-medium">
                         <i data-lucide="user" class="h-3 w-3 text-slate-400"></i> ${prof.trim()}
                     </span>`).join('<span class="text-slate-300 mx-1">/</span>');
@@ -1743,520 +1743,197 @@
                 pageMap[item.page].push(item);
             }
 
-            // === PASO 2: En cada página, encontrar ordinales y dividir en filas ===
-            let allRows = []; // Cada elemento = array de items (sin el ordinal) de un proyecto
-            let ordinalNumbers = []; // recopilar todos los ordinales globales para validación
-            
-            for (let p = 1; p <= 999; p++) {
-                let items = pageMap[p];
-                if (!items || items.length === 0) break;
+            let proyectos = [];
 
-                // Ordenar por Y (arriba→abajo) y luego X (izquierda→derecha)
-                items.sort((a, b) => a.y - b.y || a.x - b.x);
-
-                // Detectar la región X de los ordinales (columna Nº, la más a la izquierda)
-                let xSorted = [...items].sort((a, b) => a.x - b.x);
-                let min_X = xSorted[0].x;
-                
-                // Usar el gap más grande en los primeros items para encontrar el ancho de la columna ordinal
-                let leftGaps = [];
-                let leftItems = xSorted.filter(it => it.x < min_X + 60);
-                for (let i = 1; i < leftItems.length; i++) {
-                    let prevR = leftItems[i-1].x + Math.max(leftItems[i-1].w || 0, leftItems[i-1].str.length * 4);
-                    let g = leftItems[i].x - prevR;
-                    if (g > 0) leftGaps.push({ gap: g, x: leftItems[i].x });
-                }
-                leftGaps.sort((a, b) => b.gap - a.gap);
-                
-                // El ordinal_X_max es el borde del primer gap grande (separación entre columna Nº y columna NOMBRE)
-                let ordinal_X_max = min_X + 25; // fallback
-                if (leftGaps.length > 0) {
-                    ordinal_X_max = leftGaps[0].x - 2;
-                }
-                ordinal_X_max = Math.min(ordinal_X_max, min_X + 50);
-                
-                // Encontrar items que sean números puros 1-200 y estén en la región ordinal
-                let rawOrdinals = [];
-                for (let i = 0; i < items.length; i++) {
-                    let s = items[i].str.trim();
-                    if (/^\d{1,3}$/.test(s) && parseInt(s) >= 1 && parseInt(s) <= 200 && items[i].x <= ordinal_X_max) {
-                        rawOrdinals.push({ index: i, num: parseInt(s), str: s });
-                    }
-                }
-                
-                console.log('[PDF Import] Página ' + p + ': ' + items.length + ' items, ' + rawOrdinals.length + ' candidatos ordinales (X_max=' + ordinal_X_max.toFixed(0) + ')');
-                if (rawOrdinals.length > 0) {
-                    console.log('[PDF Import]   Candidatos:', rawOrdinals.map(r => r.num).join(', '));
-                }
-                
-                ordinalNumbers = ordinalNumbers.concat(rawOrdinals.map(r => r.num));
-                
-                // Eliminar duplicados consecutivos (mismo número repetido)
-                let unique = [];
-                for (let i = 0; i < rawOrdinals.length; i++) {
-                    if (i === 0 || rawOrdinals[i].num !== rawOrdinals[i - 1].num) {
-                        unique.push(rawOrdinals[i]);
-                    }
-                }
-                
-                // Validar: ordinales deben ser mayormente secuenciales
-                // Filtrar outliers: mantener solo los que forman una secuencia razonable
-                let validOrdinals = [];
-                if (unique.length >= 2) {
-                    validOrdinals.push(unique[0]);
-                    for (let i = 1; i < unique.length; i++) {
-                        let prevNum = validOrdinals[validOrdinals.length - 1].num;
-                        let currNum = unique[i].num;
-                        // Aceptar si avanza 1-3 (saltos pequeños de página)
-                        // Rechazar si es menor o igual al anterior, o salta más de 20
-                        if (currNum > prevNum && currNum - prevNum <= 20) {
-                            validOrdinals.push(unique[i]);
-                        }
-                    }
-                } else if (unique.length === 1) {
-                    validOrdinals = unique;
-                }
-                
-                console.log('[PDF Import]   Ordinales válidos (' + validOrdinals.length + '):', validOrdinals.map(r => r.num).join(', '));
-
-                // Dividir en filas: cada ordinal válido marca el inicio de una nueva fila
-                for (let o = 0; o < validOrdinals.length; o++) {
-                    let start = validOrdinals[o].index + 1; // excluir el ordinal
-                    let end = (o + 1 < validOrdinals.length) ? validOrdinals[o + 1].index : items.length;
-                    if (end > start) {
-                        allRows.push(items.slice(start, end));
-                    }
-                }
-            }
-            
-            // Validación global: si hay demasiadas filas (>100), probablemente hay falsos positivos
-            console.log('[PDF Import] Total filas por ordinal:', allRows.length, '(esperado: ~63)');
-            if (allRows.length > 100) {
-                console.warn('[PDF Import] Demasiadas filas detectadas. Mostrando ordinales globales para debug:');
-                console.log('[PDF Import] Ordinales:', ordinalNumbers.sort((a,b) => a-b).join(', '));
-                // Mostrar distribución para diagnóstico
-                let counts = {};
-                for (let n of ordinalNumbers) counts[n] = (counts[n] || 0) + 1;
-                let dupes = Object.entries(counts).filter(([k,v]) => v > 1).map(([k,v]) => k + 'x' + v);
-                if (dupes.length > 0) console.log('[PDF Import] Ordinales duplicados:', dupes.join(', '));
+            // Definición de las columnas por rango de coordenadas X (absolutas de la página en pt)
+            function getColumn(x) {
+                if (50 <= x && x < 80) return "nº";
+                if (80 <= x && x < 160) return "nombre";
+                if (160 <= x && x < 210) return "tipo";
+                if (210 <= x && x < 300) return "materia";
+                if (300 <= x && x < 390) return "profesor";
+                if (390 <= x && x < 500) return "espacioNecesario";
+                if (500 <= x && x < 620) return "espacioExposicion";
+                if (620 <= x && x < 710) return "alumnado";
+                if (710 <= x && x < 810) return "clase";
+                return null;
             }
 
-            if (allRows.length === 0) {
-                console.warn('[PDF Import] No se encontraron ordinales válidos. Mostrando primeros 20 items por X:');
-                let sorted = [...allItems].sort((a, b) => a.x - b.x || a.y - b.y);
-                for (let i = 0; i < Math.min(20, sorted.length); i++) {
-                    console.log('  [' + i + '] X=' + sorted[i].x.toFixed(0) + ' Y=' + sorted[i].y.toFixed(0) + ' p' + sorted[i].page + ': "' + sorted[i].str + '"');
-                }
-                return { proyectos: [] };
+            const ignoreTerms = new Set([
+                'preinscripción', 'preinscripcion', 'productos', 'finales', 'expovilladiego', '2026',
+                'nº', 'nombre', 'del', 'producto', 'final', 'tipo', 'materia', 'materias',
+                'profesorado', 'responsable', 'espacio', 'necesario', 'lugar', 'de', 'exposición', 'exposicion',
+                'se', 'ubicará', 'ubicara', 'al', 'final,', 'cuando', 'tengamos', 'todos)', '(se', 'alumnado', 'clase',
+                'preinscripciôn', 'preinscripción', 'exposicióón', 'exposicion', 'ubicará', 'mesa,', 'cm…', 'cm…)'
+            ]);
+
+            function shouldIgnore(text) {
+                let t = text.toLowerCase().trim();
+                return ignoreTerms.has(t);
             }
 
-            // === PASO 3 (V4): Detección de columnas basada en cabeceras ===
-            // Busca las palabras de cabecera conocidas en los items de cada página.
-            // La cabecera se repite en cada página, así que la posición X consistente
-            // across páginas identifica los límites reales de cada columna.
-            // Esto resuelve el problema del gap-based que solo encontraba 7 columnas.
-            console.log('[PDF Import] --- Deteccion de columnas V4 (header-based) ---');
-
-            // Definiciones: keyword → campo de destino
-            // Importante: el orden importa para el matching (primero match gana)
-            let headerDefs = [
-                { kw: 'nº', field: 'ordinal' },
-                { kw: 'nombre', field: 'nombre' },
-                { kw: 'tipo', field: 'tipo' },
-                { kw: 'materia', field: 'materia' },
-                { kw: 'profesor', field: 'profesor' },
-                { kw: 'responsable', field: 'profesor' },
-                { kw: 'alumnado', field: 'alumnado' },
-                // IMPORTANTE: "exposici" y "lugar" ANTES que "espacio"
-                // para que "ESPACIO DE EXPOSICIÓN" no se asigne a espacioNecesario
-                { kw: 'exposici', field: 'espacioExposicion' },
-                { kw: 'lugar', field: 'espacioExposicion' },
-                { kw: 'necesario', field: 'espacioNecesario' },
-                { kw: 'espacio', field: 'espacioNecesario' },
-                { kw: 'evaluaci', field: 'clase' },
-                { kw: 'clase', field: 'clase' },
-            ];
-
-            // Recopilar candidatos a cabecera de TODAS las páginas
-            let fieldCandidates = {}; // field → [{x, page, str}]
-            for (let p = 1; p <= Object.keys(pageMap).length; p++) {
+            // Procesar cada página
+            const totalPages = Object.keys(pageMap).length;
+            for (let p = 1; p <= totalPages; p++) {
                 let items = pageMap[p] || [];
+
+                let currentProject = null;
+                let alumnadoList = [];
+                let claseList = [];
+
                 for (let item of items) {
-                    let lower = item.str.toLowerCase().trim();
-                    // Ignorar items muy largos (datos, no cabeceras) o muy cortos
-                    if (lower.length > 30 || lower.length < 2) continue;
-                    // Ignorar números puros (son ordinales, no cabeceras)
-                    if (/^\d+$/.test(lower)) continue;
+                    let text = item.str;
+                    let x = item.x;
+                    let y = item.y;
 
-                    for (let def of headerDefs) {
-                        // Match bidireccional: "evaluaci" matchea "evaluación" y viceversa
-                        if (lower.includes(def.kw) || def.kw.includes(lower)) {
-                            if (!fieldCandidates[def.field]) fieldCandidates[def.field] = [];
-                            fieldCandidates[def.field].push({ x: item.x, page: p, str: item.str.trim() });
-                            break; // cada item匹配a lo sumo un campo
+                    // Ignorar cabeceras y pies de página usando límites de Y (PDF.js invertido)
+                    // Cabecera superior suele tener Y pequeña, pie de página Y muy grande.
+                    // Para ser seguros, filtramos también por los términos conocidos.
+                    if (y < 90 || y > 780) continue;
+
+                    let cleanText = normalizarTexto(text);
+                    if (!cleanText || shouldIgnore(cleanText)) continue;
+
+                    let col = getColumn(x);
+                    if (!col) continue;
+
+                    // Si es un número en la columna Nº, comenzamos un nuevo proyecto
+                    if (col === "nº" && /^\d+$/.test(cleanText)) {
+                        if (currentProject) {
+                            currentProject.alumnado = alumnadoList.filter(Boolean).map(a => a.trim()).join('/');
+                            currentProject.clase = claseList.filter(Boolean).map(c => c.trim()).join('/');
+                            proyectos.push(currentProject);
                         }
+                        currentProject = {
+                            id: Date.now() + Math.floor(Math.random() * 100000) + proyectos.length,
+                            nombre: "",
+                            tipo: "Sin definir",
+                            materia: "",
+                            profesor: "",
+                            espacioNecesario: "N/A",
+                            espacioExposicion: "Por asignar",
+                            alumnado: "",
+                            clase: "N/A"
+                        };
+                        alumnadoList = [];
+                        claseList = [];
+                        continue;
                     }
-                }
-            }
 
-            // Para cada campo, encontrar la posición X más consistente (moda por páginas)
-            // Las cabeceras aparecen en la misma posición X en cada página,
-            // mientras que los datos con keywords coincidentes aparecen en posiciones aleatorias
-            let fieldXPosition = {}; // field → {x, pageCount}
-            for (let [field, candidates] of Object.entries(fieldCandidates)) {
-                // Agrupar por X redondeado (nearest 5pt) y contar páginas únicas
-                let xGroups = {};
-                for (let c of candidates) {
-                    let rx = Math.round(c.x / 5) * 5;
-                    if (!xGroups[rx]) xGroups[rx] = new Set();
-                    xGroups[rx].add(c.page);
-                }
+                    if (!currentProject) continue;
 
-                // La posición con más páginas distintas es la cabecera real
-                let best = null;
-                for (let [rx, pages] of Object.entries(xGroups)) {
-                    if (!best || pages.size > best.pageCount ||
-                        (pages.size === best.pageCount && pages.size >= 2)) {
-                        best = { x: parseInt(rx), pageCount: pages.size };
-                    }
-                }
-
-                if (best && best.pageCount >= 2) {
-                    fieldXPosition[field] = best;
-                    console.log('[PDF Import]   Cabecera "' + field + '": X=' + best.x +
-                        ' (' + best.pageCount + ' paginas, ' + candidates.length + ' ocurrencias)');
-                } else {
-                    console.warn('[PDF Import]   No se encontro cabecera para "' + field +
-                        '" (' + candidates.length + ' candidatos, mejor=' +
-                        (best ? best.pageCount + ' paginas' : 'ninguno') + ')');
-                }
-            }
-
-            // Construir lista de campos de datos ordenados por posición X
-            let dataFields = ['nombre', 'tipo', 'materia', 'profesor', 'alumnado',
-                              'espacioNecesario', 'espacioExposicion', 'clase'];
-            let sortedFields = dataFields
-                .filter(f => fieldXPosition[f])
-                .map(f => ({ name: f, x: fieldXPosition[f].x }))
-                .sort((a, b) => a.x - b.x);
-
-            console.log('[PDF Import] Campos detectados por cabecera: ' + sortedFields.length + '/8');
-            console.log('[PDF Import] Orden X: ' + sortedFields.map(f => f.name + '@' + f.x).join(', '));
-
-            // Declarar variables que usará PASO 5
-            let colRanges, fieldColIndex;
-
-            if (sortedFields.length >= 5) {
-                // === RUTA PRINCIPAL: Header-based column ranges ===
-                // Límite izquierdo: después de la columna ordinal
-                let ordinalEnd = fieldXPosition.ordinal
-                    ? fieldXPosition.ordinal.x + 15
-                    : 85;
-
-                colRanges = [];
-                for (let i = 0; i < sortedFields.length; i++) {
-                    // El inicio de cada columna es el máximo entre:
-                    // - el final de la columna anterior
-                    // - la posición X de la cabecera (con 3pt de tolerancia a la izquierda)
-                    let startX = (i === 0)
-                        ? Math.max(ordinalEnd, sortedFields[i].x - 3)
-                        : Math.max(colRanges[i - 1][1], sortedFields[i].x - 3);
-
-                    if (i < sortedFields.length - 1) {
-                        // El límite es el midpoint entre esta cabecera y la siguiente
-                        let midX = Math.round((sortedFields[i].x + sortedFields[i + 1].x) / 2);
-                        colRanges.push([startX, midX]);
-                    } else {
-                        // La última columna se extiende hasta el infinito
-                        colRanges.push([startX, 99999]);
-                    }
-                }
-
-                console.log('[PDF Import] Columnas detectadas: ' + colRanges.length);
-                for (let c = 0; c < colRanges.length; c++) {
-                    let field = sortedFields[c] ? sortedFields[c].name : '?';
-                    let width = colRanges[c][1] === 99999 ? '???'
-                        : (colRanges[c][1] - colRanges[c][0]).toFixed(0);
-                    console.log('  Col ' + c + ' (' + field + '): X=[' +
-                        colRanges[c][0].toFixed(0) + ', ' +
-                        (colRanges[c][1] === 99999 ? 'inf' : colRanges[c][1].toFixed(0)) +
-                        '] ancho=' + width);
-                }
-
-                // Mapeo directo: índice de columna → nombre de campo
-                fieldColIndex = {};
-                for (let c = 0; c < sortedFields.length; c++) {
-                    fieldColIndex[sortedFields[c].name] = c;
-                }
-                console.log('[PDF Import] Mapeo campo->columna:', JSON.stringify(fieldColIndex));
-
-            } else {
-                // === FALLBACK: Gap-based (para PDFs sin cabecera reconocible) ===
-                console.warn('[PDF Import] Fallback a deteccion por gaps...');
-                let gapDataItems = allItems.filter(item => item.x > 85);
-                gapDataItems.sort((a, b) => a.x - b.x);
-                let gaps = [];
-                for (let i = 1; i < gapDataItems.length; i++) {
-                    let prevRight = gapDataItems[i - 1].x +
-                        Math.max(gapDataItems[i - 1].w || 0, gapDataItems[i - 1].str.length * 5);
-                    let gap = gapDataItems[i].x - prevRight;
-                    if (gap > 0) gaps.push({ gap: gap, x: (gapDataItems[i].x + prevRight) / 2 });
-                }
-                gaps.sort((a, b) => a.gap - b.gap);
-                let columnGaps = gaps.slice(-8);
-                let boundaries = columnGaps.map(g => g.x).sort((a, b) => a - b);
-                colRanges = [];
-                let prev = 0;
-                for (let bx of boundaries) {
-                    colRanges.push([prev, bx]);
-                    prev = bx;
-                }
-                colRanges.push([prev, 99999]);
-
-                let fieldKeywords = {
-                    nombre: ['nombre', 'producto', 'final'],
-                    tipo: ['tipo'],
-                    materia: ['materia'],
-                    profesor: ['profesor', 'responsable', 'docente'],
-                    alumnado: ['alumnado', 'alumno'],
-                    espacioNecesario: ['necesario'],
-                    espacioExposicion: ['exposici', 'lugar', 'ubicaci'],
-                    clase: ['evaluaci', 'clase', 'curso']
-                };
-                let colScores = colRanges.map(() => ({}));
-                for (let item of gapDataItems) {
-                    let lower = item.str.toLowerCase();
-                    for (let c = 0; c < colRanges.length; c++) {
-                        if (item.x >= colRanges[c][0] && item.x < colRanges[c][1]) {
-                            for (let [field, kws] of Object.entries(fieldKeywords)) {
-                                if (kws.some(k => lower.includes(k))) {
-                                    colScores[c][field] = (colScores[c][field] || 0) + 1;
-                                }
-                            }
-                            break;
+                    if (col === "nombre") {
+                        currentProject.nombre = (currentProject.nombre + " " + cleanText).trim();
+                    } else if (col === "tipo") {
+                        let normalizedTipo = normalizarTipo(cleanText);
+                        if (normalizedTipo) {
+                            currentProject.tipo = normalizedTipo;
                         }
+                    } else if (col === "materia") {
+                        currentProject.materia = (currentProject.materia + " " + cleanText).trim();
+                    } else if (col === "profesor") {
+                        currentProject.profesor = (currentProject.profesor + " " + cleanText).trim();
+                    } else if (col === "espacioNecesario") {
+                        if (currentProject.espacioNecesario === "N/A") currentProject.espacioNecesario = "";
+                        currentProject.espacioNecesario = (currentProject.espacioNecesario + " " + cleanText).trim();
+                    } else if (col === "espacioExposicion") {
+                        if (currentProject.espacioExposicion === "Por asignar") currentProject.espacioExposicion = "";
+                        currentProject.espacioExposicion = (currentProject.espacioExposicion + " " + cleanText).trim();
+                    } else if (col === "alumnado") {
+                        alumnadoList.push(cleanText);
+                    } else if (col === "clase") {
+                        claseList.push(cleanText);
                     }
                 }
-                fieldColIndex = {};
-                let colRanking = colRanges.map((_, c) => {
-                    let entries = Object.entries(colScores[c])
-                        .filter(([_, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-                    return { col: c, best: entries[0] || null,
-                             score: entries[0] ? entries[0][1] : 0, all: entries };
-                }).filter(r => r.best).sort((a, b) => b.score - a.score);
-                let usedFields = new Set();
-                for (let r of colRanking) {
-                    if (!usedFields.has(r.best[0])) {
-                        fieldColIndex[r.best[0]] = r.col;
-                        usedFields.add(r.best[0]);
-                    }
+
+                // Guardar el último proyecto de la página
+                if (currentProject) {
+                    currentProject.alumnado = alumnadoList.filter(Boolean).map(a => a.trim()).join('/');
+                    currentProject.clase = claseList.filter(Boolean).map(c => c.trim()).join('/');
+                    proyectos.push(currentProject);
                 }
-                console.log('[PDF Import] Columnas (fallback):', colRanges.length,
-                    '- Mapeo:', JSON.stringify(fieldColIndex));
             }
 
-            // === PASO 5: Parsear cada fila en un proyecto ===
-            let proyectos = [];
+            // Normalización final y limpieza de campos por defecto
+            proyectos.forEach(p => {
+                if (!p.nombre) p.nombre = "Proyecto sin nombre";
+                if (!p.tipo) p.tipo = "Sin definir";
+                if (!p.materia) p.materia = "No especificada";
+                if (!p.profesor) p.profesor = "No especificado";
+                if (!p.espacioNecesario) p.espacioNecesario = "N/A";
+                if (!p.espacioExposicion) p.espacioExposicion = "Por asignar";
 
-            for (let rowIdx = 0; rowIdx < allRows.length; rowIdx++) {
-                // Asignar items de la fila a columnas por posición X
-                let cells = colRanges.map(() => '');
-                for (let item of allRows[rowIdx]) {
-                    for (let c = 0; c < colRanges.length; c++) {
-                        if (item.x >= colRanges[c][0] && item.x < colRanges[c][1]) {
-                            cells[c] = cells[c] ? cells[c] + ' ' + item.str : item.str;
-                            break;
-                        }
-                    }
+                if (p.espacioExposicion.toLowerCase().includes("escoge una opc")) {
+                    p.espacioExposicion = "Por asignar";
                 }
-                cells = cells.map(c => normalizarTexto(c.trim()));
-
-                // Extraer campos
-                let nombre = cells[fieldColIndex.nombre] || '';
-                if (nombre.length < 3) continue;
-
-                // Validación estricta: el nombre no debe contener palabras de cabecera ni ser demasiado largo
-                let lower = nombre.toLowerCase();
-                let headerWords = ['nombre', 'producto', 'preinscripci', 'expovilladiego', 'total', 'pagina', 'resumen', 'materia', 'profesor', 'alumnado', 'espacio', 'necesario', 'exposici', 'evaluaci', 'tipo'];
-                if (headerWords.some(k => lower.includes(k))) continue;
-                if (nombre.length > 120) {
-                    console.warn('[PDF Import] Fila ' + rowIdx + ' descartada: nombre demasiado largo (' + nombre.length + ' chars):', nombre.substring(0, 60) + '...');
-                    continue;
-                }
-                // Si el nombre contiene más de 5 palabras clave de otras columnas, probablemente es basura fusionada
-                let crossFieldWords = ['mural', 'maqueta', 'mesa', 'pared', 'aula', 'pasillo', 'demo', 'vídeo', 'página', 'libro', 'esco'];
-                let crossCount = crossFieldWords.filter(w => lower.includes(w)).length;
-                if (crossCount >= 4) {
-                    console.warn('[PDF Import] Fila ' + rowIdx + ' descartada: parece fusión de múltiples proyectos (' + crossCount + ' cruces)');
-                    continue;
+                
+                // Normalizar profesor: limpiar espacios alrededor de separadores (coma y barra)
+                // y eliminar espacios múltiples internos en cada nombre
+                if (p.profesor && p.profesor !== "No especificado") {
+                    p.profesor = p.profesor
+                        .split(/[,\/]/)                                    // separar por coma o barra
+                        .map(pr => pr.replace(/\s+/g, ' ').trim())         // normalizar espacios internos
+                        .filter(Boolean)                                    // eliminar entradas vacías
+                        .join(', ');                                        // reunir con formato canónico
                 }
 
-                let tipo = normalizarTipo(cells[fieldColIndex.tipo] || '') || 'No especificado';
-                let materia = cells[fieldColIndex.materia] || '';
-                let profesor = cells[fieldColIndex.profesor] || '';
-                let alumnado = (cells[fieldColIndex.alumnado] || '').replace(/[?]/g, '').trim();
-                let espacioNecesario = cells[fieldColIndex.espacioNecesario] || 'N/A';
-                let espacioExposicion = cells[fieldColIndex.espacioExposicion] || 'Por asignar';
-                let clase = cells[fieldColIndex.clase] || 'N/A';
-
-                proyectos.push({
-                    nombre, tipo, materia, profesor, alumnado, espacioNecesario, espacioExposicion, clase
-                });
-            }
-
-            console.log('[PDF Import] Proyectos extraidos:', proyectos.length);
-            if (proyectos.length > 0) {
-                console.log('[PDF Import] Primer proyecto:', JSON.stringify(proyectos[0]));
-                if (proyectos.length > 1) {
-                    console.log('[PDF Import] Ultimo proyecto:', JSON.stringify(proyectos[proyectos.length - 1]));
+                // Limpiar alumnado y clase con interrogaciones o solapes
+                if (p.alumnado === "?" || p.alumnado === "??" || p.alumnado === "¿?") {
+                    p.alumnado = "";
                 }
-            }
-            return { proyectos };
-        }
-
-        // MOTOR DE ANÁLISIS DE TABLAS E HIGIENIZACIÓN LATEX (100% LOCAL Y EXACTO) - LEGACY
-        function analizarTextoPDFLocal(textoPdf) {
-            let proyectos = [];
-            
-            // 1. Dividimos el documento en celdas separadas por el patrón de comillas y comas que usa la tabla
-            function parseCSVLine(text) {
-                let fields = [];
-                let currentField = "";
-                let inQuotes = false;
-                for (let i = 0; i < text.length; i++) {
-                    let char = text[i];
-                    let nextChar = text[i+1];
-                    if (char === '"') {
-                        if (inQuotes && nextChar === '"') {
-                            currentField += '"';
-                            i++;
-                        } else {
-                            inQuotes = !inQuotes;
-                        }
-                    } else if (char === ',' && !inQuotes) {
-                        fields.push(currentField);
-                        currentField = "";
-                    } else {
-                        currentField += char;
-                    }
-                }
-                fields.push(currentField);
-                return fields;
-            }
-
-            // Dividir en filas lógicas sin romper los saltos de línea internos de las celdas
-            let rows = [];
-            let currentRow = "";
-            let inQuotes = false;
-            for (let i = 0; i < textoPdf.length; i++) {
-                let char = textoPdf[i];
-                if (char === '"') {
-                    inQuotes = !inQuotes;
-                    currentRow += char;
-                } else if ((char === '\n' || char === '\r') && !inQuotes) {
-                    if (currentRow.trim()) rows.push(currentRow);
-                    currentRow = "";
-                } else {
-                    currentRow += char;
-                }
-            }
-            if (currentRow.trim()) rows.push(currentRow);
-
-            // Procesar cada fila de la tabla
-            rows.forEach(row => {
-                let fields = parseCSVLine(row);
-                if (fields.length < 3) return;
-
-                let cleanedFields = fields.map(f => f.trim());
-                if (cleanedFields[0].toUpperCase().includes("NOMBRE") || cleanedFields[0] === "" || cleanedFields[0].toUpperCase().includes("PREINSCRIPCIÓN") || cleanedFields[0].toUpperCase().includes("EXPOVILLADIEGO")) {
-                    return;
-                }
-
-                // Detectar si la primera columna es un número de fila (Formato de 9 columnas) para desplazar el índice
-                let offset = 0;
-                if (cleanedFields.length >= 9 || /^\d+$/.test(cleanedFields[0].split('\n')[0].trim())) {
-                    offset = 1;
-                }
-
-                // Extraemos y descomprimimos posibles filas colapsadas
-                let nombres = (cleanedFields[0 + offset] || "").split(/\n{2,}/).map(n => n.replace(/\s+/g, ' ').trim()).filter(Boolean);
-                let tipos = (cleanedFields[1 + offset] || "").split(/\n{2,}/).map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
-                let materias = (cleanedFields[2 + offset] || "").split(/\n{2,}/).map(m => m.replace(/\s+/g, ' ').trim()).filter(Boolean);
-                let profesores = (cleanedFields[3 + offset] || "").split(/\n{2,}/).map(p => p.replace(/\s+/g, ' ').trim()).filter(Boolean);
-                let espaciosNecesarios = (cleanedFields[4 + offset] || "").split(/\n{2,}/).map(e => e.replace(/\s+/g, ' ').trim()).filter(Boolean);
-                let lugaresExposicion = (cleanedFields[5 + offset] || "").split(/\n{2,}/).map(e => e.replace(/\s+/g, ' ').trim()).filter(Boolean);
-                let alumnos = (cleanedFields[6 + offset] || "").split(/\n{2,}/).map(a => a.replace(/\s+/g, ' ').trim()).filter(Boolean);
-                let clases = (cleanedFields[7 + offset] || "").split(/\n{2,}/).map(c => c.replace(/\s+/g, ' ').trim()).filter(Boolean);
-
-                let maxSubRows = Math.max(nombres.length, materias.length, profesores.length);
-
-                for (let idx = 0; idx < maxSubRows; idx++) {
-                    let nombre = nombres[idx] || nombres[0] || "";
-                    let tipo = tipos[idx] || tipos[0] || "";
-                    let materia = materias[idx] || materias[0] || "";
-                    let profesor = profesores[idx] || profesores[0] || "";
-                    let espacioNecesario = espaciosNecesarios[idx] || espaciosNecesarios[0] || "";
-                    let espacioExposicion = lugaresExposicion[idx] || lugaresExposicion[0] || "";
-                    let alumnado = alumnos[idx] || alumnos[0] || "";
-                    let clase = clases[idx] || clases[0] || "";
-
-                    nombre = normalizarTexto(nombre);
-                    tipo = normalizarTipo(normalizarTexto(tipo));
-                    materia = normalizarTexto(materia);
-                    profesor = normalizarTexto(profesor);
-                    espacioNecesario = normalizarTexto(espacioNecesario);
-                    espacioExposicion = normalizarTexto(espacioExposicion);
-                    alumnado = normalizarTexto(alumnado);
-                    clase = normalizarTexto(clase);
-
-                    // Forzar asignación limpia para el caso específico del alumno de Tecnología
-                    if (nombre.includes("Te adivino tu cumple")) {
-                        alumnado = "Juan Martínez";
-                    } else if (nombre.includes("Ciclo del agua")) {
-                        alumnado = "";
-                    }
-
-                    if (nombre && materia && profesor) {
-                        proyectos.push({
-                            nombre,
-                            tipo: tipo || "No especificado",
-                            materia,
-                            profesor,
-                            espacioNecesario,
-                            espacioExposicion,
-                            alumnado: (alumnado === "?" || alumnado === "??") ? "" : alumnado,
-                            clase
-                        });
-                    }
-                }
+                // Si la clase contiene "N/A/N/A" u otras uniones vacías
+                p.clase = p.clase.split('/').map(c => c.trim()).filter(c => c && c !== "N/A").join('/');
+                if (!p.clase) p.clase = "N/A";
             });
 
+            console.log('[PDF Import] Total proyectos extraídos:', proyectos.length);
             return { proyectos };
         }
+
+
 
         function normalizarTexto(t) {
             if (!t) return "";
             return t
+                // Corregir mojibake común de codificaciones de caracteres en PDFs
+                .replace(/├│/g, 'ó').replace(/├│/g, 'ó')
+                .replace(/├í/g, 'á').replace(/├¡/g, 'í')
+                .replace(/├║/g, 'ú').replace(/├®/g, 'é')
+                .replace(/├▒/g, 'ñ').replace(/├æ/g, 'Ñ')
+                .replace(/├ü/g, 'Á').replace(/├ë/g, 'É')
+                .replace(/├ì/g, 'Í').replace(/├ô/g, 'Ó')
+                .replace(/├ﾚ/g, 'Ú')
+                .replace(/├┬/g, 'Â')
+                .replace(/┬║/g, 'º')
+                .replace(/┬¼/g, '¼')
+                .replace(/┬½/g, '½')
+                .replace(/┬░/g, 'º')
+                .replace(/┬¢/g, '½')
+                .replace(/┬┐/g, '¿')
+                .replace(/ÔÇª/g, '...')
+                .replace(/\\u2026/g, '...')
+                // LaTeX y limpieza de formato
                 .replace(/\$4\^\{\\circ\}\$/g, '4º')
                 .replace(/\$3\^\{\\circ\}\$/g, '3º')
                 .replace(/\$2\^\{\\circ\}\$/g, '2º')
                 .replace(/\$1\^\{\\circ\}\$/g, '1º')
-                .replace(/\\frac\{1\}\{2\}/g, '1/2')
+                .replace(/\\frac\{1\}\{2\}/g, '½')
                 .replace(/\\/g, '')
                 .replace(/\s+/g, ' ')
                 .trim();
         }
 
         function normalizarTipo(tipo) {
-            let t = tipo.toLowerCase();
+            if (!tipo) return "Sin definir";
+            let t = tipo.toLowerCase().trim();
             if (t.includes("maqu")) return "Maqueta";
             if (t.includes("mural")) return "Mural";
             if (t.includes("demo")) return "Demostración";
-            if (t.includes("esco")) return "Sin definir";
+            if (t.includes("esco") || t.includes("sin defin")) return "Sin definir";
             if (t.includes("víd") || t.includes("vid")) return "Vídeo";
-            if (t.includes("pág") || t.includes("web")) return "Páginas Web";
-            if (t.includes("libro")) return "Libro";
-            return tipo;
+            if (t.includes("pág") || t.includes("web") || t.includes("pagin")) return "Página Web";
+            if (t.includes("libro") || t.includes("revist")) return "Libro/revista";
+            return "Sin definir";
         }
 
         // ALGORITMO INTELIGENTE DE FUSIÓN (MERGE) PARA EVITAR DUPLICADOS
@@ -2272,18 +1949,10 @@
                 });
 
                 if (indexCoincidente !== -1) {
-                    const proyOriginal = database[indexCoincidente];
-                    if (!proyOriginal.tipo && proyectoImportado.tipo) proyOriginal.tipo = proyectoImportado.tipo;
-                    if (!proyOriginal.materia && proyectoImportado.materia) proyOriginal.materia = proyectoImportado.materia;
-                    if (!proyOriginal.profesor && proyectoImportado.profesor) proyOriginal.profesor = proyectoImportado.profesor;
-                    if (!proyOriginal.espacioNecesario && proyectoImportado.espacioNecesario) proyOriginal.espacioNecesario = proyectoImportado.espacioNecesario;
-                    if (!proyOriginal.espacioExposicion && proyectoImportado.espacioExposicion) proyOriginal.espacioExposicion = proyectoImportado.espacioExposicion;
-                    if (!proyOriginal.alumnado && proyectoImportado.alumnado) proyOriginal.alumnado = proyectoImportado.alumnado;
-                    if (!proyOriginal.clase && proyectoImportado.clase) proyOriginal.clase = proyectoImportado.clase;
-                    actualizados++;
+                    // Ya existe, no se incorpora ni se modifica nada de este producto
                 } else {
                     database.push({
-                        id: Date.now() + Math.floor(Math.random() * 1000),
+                        id: Date.now() + Math.floor(Math.random() * 1000) + nuevos,
                         nombre: proyectoImportado.nombre,
                         tipo: proyectoImportado.tipo || "No especificado",
                         materia: proyectoImportado.materia,
@@ -2695,7 +2364,7 @@
             contenedor.innerHTML = '';
             const mostrarProyectos = document.getElementById('chk-ui-profesores') ? document.getElementById('chk-ui-profesores').checked : true;
             const mapaProfes = {};
-            getDatabase().forEach(p => { if (p.profesor) { p.profesor.split('/').forEach(pr => { const prof = pr.trim(); if (prof) { if (!mapaProfes[prof]) mapaProfes[prof] = []; mapaProfes[prof].push(p); } }); } });
+            getDatabase().forEach(p => { if (p.profesor) { p.profesor.split(/[,\/]/).forEach(pr => { const prof = pr.replace(/\s+/g, ' ').trim(); if (prof && prof !== 'No especificado') { if (!mapaProfes[prof]) mapaProfes[prof] = []; mapaProfes[prof].push(p); } }); } });
 
             Object.keys(mapaProfes).sort((a, b) => mapaProfes[b].length - mapaProfes[a].length).forEach(prof => {
                 let html = '';
@@ -2763,7 +2432,7 @@
             let html = `<div class="border-b-2 border-slate-800 pb-4 mb-6 flex justify-between items-end"><div><h1 class="text-2xl font-black text-slate-900 uppercase tracking-tight">EXPOVILLADIEGO ${añoFin}</h1><p class="text-sm font-bold text-slate-600 uppercase tracking-wider">Curso escolar ${añoCurso} · IES Peñaflor, Sevilla</p><p class="text-xs text-slate-400 mt-0.5">Dossier organizativo e informes de la exposición de productos finales</p></div><div class="text-right text-xs text-slate-500"><p>Generado el: <strong>${new Date().toLocaleDateString('es-ES')}</strong></p><p>Curso: <strong>${añoCurso}</strong></p><p>Filtros aplicados: <strong>${usarFiltrados ? 'SÍ' : 'NO'}</strong></p></div></div>`;
 
             if (document.getElementById('pdf-incluir-kpis').checked) {
-                html += `<div class="grid grid-cols-4 gap-4 mb-8 print-card p-4 rounded-xl border border-slate-200 bg-slate-50/50"><div class="text-center"><span class="block text-xs font-bold text-slate-400 uppercase">Proyectos</span><span class="text-xl font-extrabold text-indigo-700">${datasetToPrint.length}</span></div><div class="text-center border-l border-slate-200"><span class="block text-xs font-bold text-slate-400 uppercase">Tipos de Stand</span><span class="text-xl font-extrabold text-indigo-700">${new Set(datasetToPrint.map(p => p.tipo).filter(Boolean)).size}</span></div><div class="text-center border-l border-slate-200"><span class="block text-xs font-bold text-slate-400 uppercase">Docentes</span><span class="text-xl font-extrabold text-indigo-700">${new Set(datasetToPrint.flatMap(p => p.profesor ? p.profesor.split('/') : []).map(pr => pr.trim()).filter(Boolean)).size}</span></div><div class="text-center border-l border-slate-200"><span class="block text-xs font-bold text-slate-400 uppercase">Espacios</span><span class="text-xl font-extrabold text-indigo-700">${new Set(datasetToPrint.flatMap(p => p.espacioExposicion ? p.espacioExposicion.split('/') : []).map(e => e.trim()).filter(Boolean)).size}</span></div></div>`;
+                html += `<div class="grid grid-cols-4 gap-4 mb-8 print-card p-4 rounded-xl border border-slate-200 bg-slate-50/50"><div class="text-center"><span class="block text-xs font-bold text-slate-400 uppercase">Proyectos</span><span class="text-xl font-extrabold text-indigo-700">${datasetToPrint.length}</span></div><div class="text-center border-l border-slate-200"><span class="block text-xs font-bold text-slate-400 uppercase">Tipos de Stand</span><span class="text-xl font-extrabold text-indigo-700">${new Set(datasetToPrint.map(p => p.tipo).filter(Boolean)).size}</span></div><div class="text-center border-l border-slate-200"><span class="block text-xs font-bold text-slate-400 uppercase">Docentes</span><span class="text-xl font-extrabold text-indigo-700">${new Set(datasetToPrint.flatMap(p => p.profesor ? p.profesor.split(/[,\/]/) : []).map(pr => pr.replace(/\s+/g, ' ').trim()).filter(k => k && k !== 'No especificado')).size}</span></div><div class="text-center border-l border-slate-200"><span class="block text-xs font-bold text-slate-400 uppercase">Espacios</span><span class="text-xl font-extrabold text-indigo-700">${new Set(datasetToPrint.flatMap(p => p.espacioExposicion ? p.espacioExposicion.split('/') : []).map(e => e.trim()).filter(Boolean)).size}</span></div></div>`;
             }
 
             const informes = alcance === 'activo' ? [reporteActivo] : ['reporte-tipos', 'reporte-profesores', 'reporte-espacios', 'reporte-alumnos'];
@@ -2786,7 +2455,7 @@
             return Object.keys(m).sort().map(t => `<div class="print-card p-4 rounded-xl border border-slate-200"><div class="flex justify-between items-center font-bold text-slate-800"><span>Tipo: ${t}</span><span class="text-indigo-700">${m[t].length} Proyectos</span></div>${conProy ? `<table class="w-full text-left text-xs mt-2 border-t border-slate-100"><thead><tr class="text-slate-400 font-bold uppercase text-[10px]"><th class="py-1">Proyecto</th><th class="py-1">Materia</th><th class="py-1">Aula</th></tr></thead><tbody class="divide-y divide-slate-100">${m[t].map(p => `<tr><td class="py-1 font-bold text-slate-800">${p.nombre}</td><td class="py-1 text-slate-600">${p.materia}</td><td class="py-1 text-slate-600">${p.espacioExposicion}</td></tr>`).join('')}</tbody></table>` : ''}</div>`).join('');
         }
         function obtenerPrintProfesores(conProy, dataset) {
-            const m = {}; dataset.forEach(p => { if (p.profesor) p.profesor.split('/').forEach(pr => { const prL = pr.trim(); if (prL) { if (!m[prL]) m[prL] = []; m[prL].push(p); }}); });
+            const m = {}; dataset.forEach(p => { if (p.profesor) p.profesor.split(/[,\/]/).forEach(pr => { const prL = pr.replace(/\s+/g, ' ').trim(); if (prL && prL !== 'No especificado') { if (!m[prL]) m[prL] = []; m[prL].push(p); }}); });
             return Object.keys(m).sort().map(pr => `<div class="print-card p-4 rounded-xl border border-slate-200"><div class="flex justify-between items-center font-bold text-slate-800"><span>Tutor: ${pr}</span><span class="text-indigo-700">${m[pr].length} Stands</span></div>${conProy ? `<table class="w-full text-left text-xs mt-2 border-t border-slate-100"><thead><tr class="text-slate-400 font-bold uppercase text-[10px]"><th class="py-1">Stand</th><th class="py-1">Materia</th><th class="py-1">Ubicación</th></tr></thead><tbody class="divide-y divide-slate-100">${m[pr].map(p => `<tr><td class="py-1 font-bold text-slate-800 text-left">${p.nombre}</td><td class="py-1 text-slate-600 text-left">${p.materia}</td><td class="py-1 text-slate-600 text-left">${p.espacioExposicion}</td></tr>`).join('')}</tbody></table>` : ''}</div>`).join('');
         }
         function obtenerPrintEspacios(conProy, dataset) {

@@ -1748,8 +1748,10 @@
                 }
             }
             yDiffs.sort((a, b) => a - b);
-            let typicalLineGap = yDiffs[Math.floor(yDiffs.length * 0.5)] || 12;
-            let rowThreshold = Math.max(typicalLineGap * 0.4, 2);
+            // Percentil 85 para capturar el gap entre filas reales (no el ruido intra-fila)
+            let typicalLineGap = yDiffs.length > 0 ? yDiffs[Math.floor(yDiffs.length * 0.85)] : 14;
+            let rowThreshold = Math.max(typicalLineGap * 0.45, 5);
+            console.log('[PDF Import] typicalLineGap:', typicalLineGap.toFixed(1), 'rowThreshold:', rowThreshold.toFixed(1));
             
             // Agrupar items en líneas Y
             let lines = [];
@@ -1771,23 +1773,55 @@
             
             console.log('[PDF Import] Lineas Y detectadas:', lines.length);
             
-            // === PASO 2: Detectar la fila de cabecera ===
+            // === PASO 2: Detectar la fila de cabecera (soporta cabeceras multilínea) ===
             let headerLineIdx = -1;
-            for (let i = 0; i < Math.min(lines.length, 25); i++) {
+            let headerKeywords = ['nombre', 'producto', 'tipo', 'materia', 'profesor', 'responsable', 'alumnado', 'espacio', 'necesario', 'exposici', 'lugar', 'evaluaci', 'n\u00ba', 'no'];
+            
+            for (let i = 0; i < Math.min(lines.length, 80); i++) {
                 let text = lines[i].map(it => it.str).join(' ').toLowerCase();
-                if ((text.includes('nombre') && text.includes('producto')) ||
-                    (text.includes('nombre') && (text.includes('materia') || text.includes('profesor') || text.includes('tipo')))) {
+                let matches = headerKeywords.filter(k => text.includes(k));
+                
+                if (matches.length >= 2) {
+                    // Encontrada línea de cabecera - puede extenderse a líneas consecutivas
                     headerLineIdx = i;
+                    let headerEnd = i;
+                    
+                    // Fusionar líneas consecutivas que también contengan keywords de cabecera
+                    while (headerEnd + 1 < Math.min(lines.length, i + 6)) {
+                        let nextText = lines[headerEnd + 1].map(it => it.str).join(' ').toLowerCase();
+                        let nextMatches = headerKeywords.filter(k => nextText.includes(k));
+                        if (nextMatches.length >= 1) {
+                            headerEnd++;
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    // Si la cabecera abarca varias líneas, fusionar sus items
+                    if (headerEnd > i) {
+                        console.log('[PDF Import] Cabecera multilínea: líneas', i, 'a', headerEnd);
+                        let merged = [];
+                        for (let j = i; j <= headerEnd; j++) {
+                            merged = merged.concat(lines[j]);
+                        }
+                        merged.sort((a, b) => a.x - b.x);
+                        lines[i] = merged;
+                        lines.splice(i + 1, headerEnd - i);
+                    }
                     break;
                 }
             }
             
             if (headerLineIdx === -1) {
                 console.warn('[PDF Import] No se encontro la fila de cabecera');
+                console.log('[PDF Import] Primeras 15 líneas para debug:');
+                for (let i = 0; i < Math.min(lines.length, 15); i++) {
+                    console.log('  Lín ' + i + ':', lines[i].map(it => it.str).join(' | '));
+                }
                 return { proyectos: [] };
             }
             
-            console.log('[PDF Import] Cabecera en linea:', headerLineIdx);
+            console.log('[PDF Import] Cabecera en linea:', headerLineIdx, 'Texto:', lines[headerLineIdx].map(it => it.str).join(' | '));
             
             // === PASO 3: Detectar columnas de la cabecera ===
             // Agrupar items de cabecera que pertenecen a la misma columna

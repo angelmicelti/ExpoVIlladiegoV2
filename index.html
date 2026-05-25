@@ -1850,106 +1850,210 @@
                 return { proyectos: [] };
             }
 
-            // === PASO 3: Detectar límites de columnas usando X-gaps ===
-            // CRÍTICO: Excluir items ordinales (X < 85) para no contaminar la detección
-            let globalOrdinalXMax = 85;
-            let dataItems = allItems.filter(item => item.x > globalOrdinalXMax);
-            console.log('[PDF Import] Items para columnas (sin ordinales):', dataItems.length, 'de', allItems.length);
+            // === PASO 3 (V4): Detección de columnas basada en cabeceras ===
+            // Busca las palabras de cabecera conocidas en los items de cada página.
+            // La cabecera se repite en cada página, así que la posición X consistente
+            // across páginas identifica los límites reales de cada columna.
+            // Esto resuelve el problema del gap-based que solo encontraba 7 columnas.
+            console.log('[PDF Import] --- Deteccion de columnas V4 (header-based) ---');
 
-            // Ordenar por X y calcular TODOS los gaps
-            dataItems.sort((a, b) => a.x - b.x);
-            let gaps = [];
-            for (let i = 1; i < dataItems.length; i++) {
-                let prevRight = dataItems[i - 1].x + Math.max(dataItems[i - 1].w || 0, dataItems[i - 1].str.length * 5);
-                let gap = dataItems[i].x - prevRight;
-                if (gap > 0) gaps.push({ gap: gap, x: (dataItems[i].x + prevRight) / 2 });
-            }
-            gaps.sort((a, b) => a.gap - b.gap);
+            // Definiciones: keyword → campo de destino
+            // Importante: el orden importa para el matching (primero match gana)
+            let headerDefs = [
+                { kw: 'nº', field: 'ordinal' },
+                { kw: 'nombre', field: 'nombre' },
+                { kw: 'tipo', field: 'tipo' },
+                { kw: 'materia', field: 'materia' },
+                { kw: 'profesor', field: 'profesor' },
+                { kw: 'responsable', field: 'profesor' },
+                { kw: 'alumnado', field: 'alumnado' },
+                // IMPORTANTE: "exposici" y "lugar" ANTES que "espacio"
+                // para que "ESPACIO DE EXPOSICIÓN" no se asigne a espacioNecesario
+                { kw: 'exposici', field: 'espacioExposicion' },
+                { kw: 'lugar', field: 'espacioExposicion' },
+                { kw: 'necesario', field: 'espacioNecesario' },
+                { kw: 'espacio', field: 'espacioNecesario' },
+                { kw: 'evaluaci', field: 'clase' },
+                { kw: 'clase', field: 'clase' },
+            ];
 
-            // Buscar el SALTO NATURAL: el punto donde gaps pasan de intra-columna a inter-columna
-            let maxRatio = 0;
-            let splitIdx = Math.floor(gaps.length * 0.6);
-            for (let i = Math.floor(gaps.length * 0.3); i < Math.min(gaps.length - 1, Math.floor(gaps.length * 0.9)); i++) {
-                let ratio = gaps[i + 1].gap / (gaps[i].gap + 0.1);
-                if (ratio > maxRatio) {
-                    maxRatio = ratio;
-                    splitIdx = i + 1;
-                }
-            }
+            // Recopilar candidatos a cabecera de TODAS las páginas
+            let fieldCandidates = {}; // field → [{x, page, str}]
+            for (let p = 1; p <= Object.keys(pageMap).length; p++) {
+                let items = pageMap[p] || [];
+                for (let item of items) {
+                    let lower = item.str.toLowerCase().trim();
+                    // Ignorar items muy largos (datos, no cabeceras) o muy cortos
+                    if (lower.length > 30 || lower.length < 2) continue;
+                    // Ignorar números puros (son ordinales, no cabeceras)
+                    if (/^\d+$/.test(lower)) continue;
 
-            let columnGaps = gaps.slice(splitIdx);
-            // Limitar a 8 gaps máximo (9 columnas de datos)
-            if (columnGaps.length > 8) columnGaps = columnGaps.slice(0, 8);
-
-            console.log('[PDF Import] Gap split en índice', splitIdx, '(ratio:', maxRatio.toFixed(1) + ') -', columnGaps.length, 'columnas separadas');
-            if (columnGaps.length > 0) {
-                console.log('[PDF Import] Gaps detectados (pt):', columnGaps.map(g => g.gap.toFixed(0)).join(', '));
-            }
-
-            let boundaries = columnGaps.map(g => g.x).sort((a, b) => a - b);
-
-            // Crear rangos de columnas
-            let colRanges = [];
-            let prev = 0;
-            for (let bx of boundaries) {
-                colRanges.push([prev, bx]);
-                prev = bx;
-            }
-            colRanges.push([prev, 99999]);
-
-            console.log('[PDF Import] Columnas detectadas:', colRanges.length);
-            for (let c = 0; c < colRanges.length; c++) {
-                let width = colRanges[c][1] === 99999 ? '???' : (colRanges[c][1] - colRanges[c][0]).toFixed(0);
-                console.log('  Col ' + c + ': X=[' + colRanges[c][0].toFixed(0) + ', ' + (colRanges[c][1] === 99999 ? 'inf' : colRanges[c][1].toFixed(0)) + '] ancho=' + width);
-            }
-
-            // === PASO 4: Mapear columnas a campos usando densidad de keywords ===
-            let fieldKeywords = {
-                nombre: ['nombre', 'producto', 'final'],
-                tipo: ['tipo'],
-                materia: ['materia'],
-                profesor: ['profesor', 'responsable', 'docente'],
-                alumnado: ['alumnado', 'alumno'],
-                espacioNecesario: ['necesario'],
-                espacioExposicion: ['exposici', 'lugar', 'ubicaci'],
-                clase: ['evaluaci', 'clase', 'curso']
-            };
-
-            // Contar keywords por columna (usando solo items de datos, sin ordinales)
-            let colScores = colRanges.map(() => ({}));
-            for (let item of dataItems) {
-                let lower = item.str.toLowerCase();
-                for (let c = 0; c < colRanges.length; c++) {
-                    if (item.x >= colRanges[c][0] && item.x < colRanges[c][1]) {
-                        for (let [field, kws] of Object.entries(fieldKeywords)) {
-                            if (kws.some(k => lower.includes(k))) {
-                                colScores[c][field] = (colScores[c][field] || 0) + 1;
-                            }
+                    for (let def of headerDefs) {
+                        // Match bidireccional: "evaluaci" matchea "evaluación" y viceversa
+                        if (lower.includes(def.kw) || def.kw.includes(lower)) {
+                            if (!fieldCandidates[def.field]) fieldCandidates[def.field] = [];
+                            fieldCandidates[def.field].push({ x: item.x, page: p, str: item.str.trim() });
+                            break; // cada item匹配a lo sumo un campo
                         }
-                        break;
                     }
                 }
             }
 
-            // Asignar cada columna al campo con más coincidencias (sin duplicados)
-            let fieldColIndex = {};
-            // Primero: ordenar columnas por puntuación del campo ganador (de mayor a menor)
-            let colRanking = colRanges.map((_, c) => {
-                let entries = Object.entries(colScores[c]).filter(([_, v]) => v > 0).sort((a, b) => b[1] - a[1]);
-                return { col: c, best: entries[0] || null, score: entries[0] ? entries[0][1] : 0, all: entries };
-            }).filter(r => r.best).sort((a, b) => b.score - a.score);
+            // Para cada campo, encontrar la posición X más consistente (moda por páginas)
+            // Las cabeceras aparecen en la misma posición X en cada página,
+            // mientras que los datos con keywords coincidentes aparecen en posiciones aleatorias
+            let fieldXPosition = {}; // field → {x, pageCount}
+            for (let [field, candidates] of Object.entries(fieldCandidates)) {
+                // Agrupar por X redondeado (nearest 5pt) y contar páginas únicas
+                let xGroups = {};
+                for (let c of candidates) {
+                    let rx = Math.round(c.x / 5) * 5;
+                    if (!xGroups[rx]) xGroups[rx] = new Set();
+                    xGroups[rx].add(c.page);
+                }
 
-            // Asignar campos sin duplicar
-            let usedFields = new Set();
-            for (let r of colRanking) {
-                if (!usedFields.has(r.best[0])) {
-                    fieldColIndex[r.best[0]] = r.col;
-                    usedFields.add(r.best[0]);
+                // La posición con más páginas distintas es la cabecera real
+                let best = null;
+                for (let [rx, pages] of Object.entries(xGroups)) {
+                    if (!best || pages.size > best.pageCount ||
+                        (pages.size === best.pageCount && pages.size >= 2)) {
+                        best = { x: parseInt(rx), pageCount: pages.size };
+                    }
+                }
+
+                if (best && best.pageCount >= 2) {
+                    fieldXPosition[field] = best;
+                    console.log('[PDF Import]   Cabecera "' + field + '": X=' + best.x +
+                        ' (' + best.pageCount + ' paginas, ' + candidates.length + ' ocurrencias)');
+                } else {
+                    console.warn('[PDF Import]   No se encontro cabecera para "' + field +
+                        '" (' + candidates.length + ' candidatos, mejor=' +
+                        (best ? best.pageCount + ' paginas' : 'ninguno') + ')');
                 }
             }
 
-            console.log('[PDF Import] Mapeo de campos:', JSON.stringify(fieldColIndex));
-            console.log('[PDF Import] Detalle por columna:', colRanking.map(r => 'Col' + r.col + ': ' + r.all.map(e => e[0] + '=' + e[1]).join(', ')).join(' | '));
+            // Construir lista de campos de datos ordenados por posición X
+            let dataFields = ['nombre', 'tipo', 'materia', 'profesor', 'alumnado',
+                              'espacioNecesario', 'espacioExposicion', 'clase'];
+            let sortedFields = dataFields
+                .filter(f => fieldXPosition[f])
+                .map(f => ({ name: f, x: fieldXPosition[f].x }))
+                .sort((a, b) => a.x - b.x);
+
+            console.log('[PDF Import] Campos detectados por cabecera: ' + sortedFields.length + '/8');
+            console.log('[PDF Import] Orden X: ' + sortedFields.map(f => f.name + '@' + f.x).join(', '));
+
+            // Declarar variables que usará PASO 5
+            let colRanges, fieldColIndex;
+
+            if (sortedFields.length >= 5) {
+                // === RUTA PRINCIPAL: Header-based column ranges ===
+                // Límite izquierdo: después de la columna ordinal
+                let ordinalEnd = fieldXPosition.ordinal
+                    ? fieldXPosition.ordinal.x + 15
+                    : 85;
+
+                colRanges = [];
+                for (let i = 0; i < sortedFields.length; i++) {
+                    // El inicio de cada columna es el máximo entre:
+                    // - el final de la columna anterior
+                    // - la posición X de la cabecera (con 3pt de tolerancia a la izquierda)
+                    let startX = (i === 0)
+                        ? Math.max(ordinalEnd, sortedFields[i].x - 3)
+                        : Math.max(colRanges[i - 1][1], sortedFields[i].x - 3);
+
+                    if (i < sortedFields.length - 1) {
+                        // El límite es el midpoint entre esta cabecera y la siguiente
+                        let midX = Math.round((sortedFields[i].x + sortedFields[i + 1].x) / 2);
+                        colRanges.push([startX, midX]);
+                    } else {
+                        // La última columna se extiende hasta el infinito
+                        colRanges.push([startX, 99999]);
+                    }
+                }
+
+                console.log('[PDF Import] Columnas detectadas: ' + colRanges.length);
+                for (let c = 0; c < colRanges.length; c++) {
+                    let field = sortedFields[c] ? sortedFields[c].name : '?';
+                    let width = colRanges[c][1] === 99999 ? '???'
+                        : (colRanges[c][1] - colRanges[c][0]).toFixed(0);
+                    console.log('  Col ' + c + ' (' + field + '): X=[' +
+                        colRanges[c][0].toFixed(0) + ', ' +
+                        (colRanges[c][1] === 99999 ? 'inf' : colRanges[c][1].toFixed(0)) +
+                        '] ancho=' + width);
+                }
+
+                // Mapeo directo: índice de columna → nombre de campo
+                fieldColIndex = {};
+                for (let c = 0; c < sortedFields.length; c++) {
+                    fieldColIndex[sortedFields[c].name] = c;
+                }
+                console.log('[PDF Import] Mapeo campo->columna:', JSON.stringify(fieldColIndex));
+
+            } else {
+                // === FALLBACK: Gap-based (para PDFs sin cabecera reconocible) ===
+                console.warn('[PDF Import] Fallback a deteccion por gaps...');
+                let gapDataItems = allItems.filter(item => item.x > 85);
+                gapDataItems.sort((a, b) => a.x - b.x);
+                let gaps = [];
+                for (let i = 1; i < gapDataItems.length; i++) {
+                    let prevRight = gapDataItems[i - 1].x +
+                        Math.max(gapDataItems[i - 1].w || 0, gapDataItems[i - 1].str.length * 5);
+                    let gap = gapDataItems[i].x - prevRight;
+                    if (gap > 0) gaps.push({ gap: gap, x: (gapDataItems[i].x + prevRight) / 2 });
+                }
+                gaps.sort((a, b) => a.gap - b.gap);
+                let columnGaps = gaps.slice(-8);
+                let boundaries = columnGaps.map(g => g.x).sort((a, b) => a - b);
+                colRanges = [];
+                let prev = 0;
+                for (let bx of boundaries) {
+                    colRanges.push([prev, bx]);
+                    prev = bx;
+                }
+                colRanges.push([prev, 99999]);
+
+                let fieldKeywords = {
+                    nombre: ['nombre', 'producto', 'final'],
+                    tipo: ['tipo'],
+                    materia: ['materia'],
+                    profesor: ['profesor', 'responsable', 'docente'],
+                    alumnado: ['alumnado', 'alumno'],
+                    espacioNecesario: ['necesario'],
+                    espacioExposicion: ['exposici', 'lugar', 'ubicaci'],
+                    clase: ['evaluaci', 'clase', 'curso']
+                };
+                let colScores = colRanges.map(() => ({}));
+                for (let item of gapDataItems) {
+                    let lower = item.str.toLowerCase();
+                    for (let c = 0; c < colRanges.length; c++) {
+                        if (item.x >= colRanges[c][0] && item.x < colRanges[c][1]) {
+                            for (let [field, kws] of Object.entries(fieldKeywords)) {
+                                if (kws.some(k => lower.includes(k))) {
+                                    colScores[c][field] = (colScores[c][field] || 0) + 1;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+                fieldColIndex = {};
+                let colRanking = colRanges.map((_, c) => {
+                    let entries = Object.entries(colScores[c])
+                        .filter(([_, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+                    return { col: c, best: entries[0] || null,
+                             score: entries[0] ? entries[0][1] : 0, all: entries };
+                }).filter(r => r.best).sort((a, b) => b.score - a.score);
+                let usedFields = new Set();
+                for (let r of colRanking) {
+                    if (!usedFields.has(r.best[0])) {
+                        fieldColIndex[r.best[0]] = r.col;
+                        usedFields.add(r.best[0]);
+                    }
+                }
+                console.log('[PDF Import] Columnas (fallback):', colRanges.length,
+                    '- Mapeo:', JSON.stringify(fieldColIndex));
+            }
 
             // === PASO 5: Parsear cada fila en un proyecto ===
             let proyectos = [];

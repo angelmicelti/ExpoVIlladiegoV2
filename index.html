@@ -1947,11 +1947,14 @@
 
         // Normaliza un nombre de profesor/a a formato Title Case
         // para evitar duplicados como "Celia" vs "CELIA" vs "celia"
+        // NOTA: No se usa \b porque JavaScript no considera vocales acentuadas
+        // como \w, así que \b rompe "ÁNGEL" → "Á" + "NGEL" = "ÁNgel" (incorrecto).
         function normalizarNombreProfesor(nombre) {
             if (!nombre) return nombre;
-            return nombre.replace(/\s+/g, ' ').trim().replace(/\b([a-záéíóúñü]+)\b/gi, function(match) {
-                return match.charAt(0).toUpperCase() + match.slice(1).toLowerCase();
-            });
+            return nombre.replace(/\s+/g, ' ').trim().split(' ').map(function(word) {
+                if (!word) return word;
+                return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+            }).join(' ');
         }
 
         // Función auxiliar: normaliza y deduplica profesorado separado por coma/barra

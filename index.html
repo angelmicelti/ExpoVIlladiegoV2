@@ -1662,21 +1662,33 @@
                     
                     // Cargar el documento PDF utilizando la librería PDF.js localmente
                     const pdf = await pdfjsLib.getDocument(typedarray).promise;
-                    let textoCompletoExtraido = "";
+                    let allItems = [];
                     
-                    // Extraer recursivamente todo el contenido de texto (Página a página)
-                    for (let i = 1; i <= pdf.numPages; i++) {
-                        const page = await pdf.getPage(i);
+                    // Extraer todos los items de texto CON SUS POSICIONES ESPACIALES (X, Y)
+                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                        const page = await pdf.getPage(pageNum);
                         const textContent = await page.getTextContent();
-                        const textoDePagina = textContent.items.map(item => item.str).join(" | ");
-                        textoCompletoExtraido += textoDePagina + "\n";
+                        const viewport = page.getViewport({ scale: 1 });
+                        
+                        for (const item of textContent.items) {
+                            if (!item.str || !item.str.trim()) continue;
+                            allItems.push({
+                                str: item.str.trim(),
+                                x: item.transform[4],
+                                y: viewport.height - item.transform[5],
+                                w: item.width || 0,
+                                page: pageNum
+                            });
+                        }
                     }
+                    console.log('[PDF Import] Items extraidos:', allItems.length, 'de', pdf.numPages, 'paginas');
                     
                     actualizarPasoProgreso('step-lectura', 'success');
                     
                     // Paso 2: Análisis Heurístico Local Robusto de Tablas
                     actualizarPasoProgreso('step-envio', 'loading');
-                    const resultadoJSON = analizarTextoPDFLocal(textoCompletoExtraido);
+                    const resultadoJSON = analizarTextoPDFPosicional(allItems);
+                    console.log('[PDF Import] Proyectos encontrados:', resultadoJSON.proyectos.length);
                     
                     await new Promise(r => setTimeout(r, 600));
                     actualizarPasoProgreso('step-envio', 'success');
@@ -1684,6 +1696,9 @@
                     // Paso 3: Sincronizar Base de Datos
                     actualizarPasoProgreso('step-sincronizacion', 'loading');
                     const resultadoSincronizacion = combinarDossierImportado(resultadoJSON);
+                    
+                    // CRITICAL: Persistir cambios en storage local y sincronizar con Firebase
+                    guardarDatosEnStorage();
                     
                     await new Promise(r => setTimeout(r, 400));
                     actualizarPasoProgreso('step-sincronizacion', 'success');
@@ -1714,7 +1729,209 @@
             reader.readAsArrayBuffer(file);
         }
 
-        // MOTOR DE ANÁLISIS DE TABLAS E HIGIENIZACIÓN LATEX (100% LOCAL Y EXACTO)
+        // =====================================================================
+        // MOTOR POSICIONAL DE ANÁLISIS DE TABLAS PDF (USA COORDENADAS X/Y DE PDF.JS)
+        // =====================================================================
+        function analizarTextoPDFPosicional(allItems) {
+            if (!allItems || allItems.length === 0) return { proyectos: [] };
+            let proyectos = [];
+            
+            // === PASO 1: Agrupar items en líneas horizontales por proximidad Y ===
+            allItems.sort((a, b) => a.y - b.y || a.x - b.x);
+            
+            // Calcular umbral de agrupación en Y
+            let yDiffs = [];
+            for (let i = 1; i < allItems.length; i++) {
+                if (allItems[i].page === allItems[i-1].page) {
+                    let dy = Math.abs(allItems[i].y - allItems[i-1].y);
+                    if (dy > 0.5) yDiffs.push(dy);
+                }
+            }
+            yDiffs.sort((a, b) => a - b);
+            let typicalLineGap = yDiffs[Math.floor(yDiffs.length * 0.5)] || 12;
+            let rowThreshold = Math.max(typicalLineGap * 0.4, 2);
+            
+            // Agrupar items en líneas Y
+            let lines = [];
+            let currentLine = [allItems[0]];
+            for (let i = 1; i < allItems.length; i++) {
+                if (allItems[i].page === currentLine[0].page &&
+                    Math.abs(allItems[i].y - currentLine[0].y) <= rowThreshold) {
+                    currentLine.push(allItems[i]);
+                } else {
+                    currentLine.sort((a, b) => a.x - b.x);
+                    lines.push(currentLine);
+                    currentLine = [allItems[i]];
+                }
+            }
+            if (currentLine.length > 0) {
+                currentLine.sort((a, b) => a.x - b.x);
+                lines.push(currentLine);
+            }
+            
+            console.log('[PDF Import] Lineas Y detectadas:', lines.length);
+            
+            // === PASO 2: Detectar la fila de cabecera ===
+            let headerLineIdx = -1;
+            for (let i = 0; i < Math.min(lines.length, 25); i++) {
+                let text = lines[i].map(it => it.str).join(' ').toLowerCase();
+                if ((text.includes('nombre') && text.includes('producto')) ||
+                    (text.includes('nombre') && (text.includes('materia') || text.includes('profesor') || text.includes('tipo')))) {
+                    headerLineIdx = i;
+                    break;
+                }
+            }
+            
+            if (headerLineIdx === -1) {
+                console.warn('[PDF Import] No se encontro la fila de cabecera');
+                return { proyectos: [] };
+            }
+            
+            console.log('[PDF Import] Cabecera en linea:', headerLineIdx);
+            
+            // === PASO 3: Detectar columnas de la cabecera ===
+            // Agrupar items de cabecera que pertenecen a la misma columna
+            let headerItems = lines[headerLineIdx];
+            
+            // Calcular gaps entre items consecutivos en la cabecera
+            let headerGaps = [];
+            for (let i = 1; i < headerItems.length; i++) {
+                let prevRight = headerItems[i-1].x + Math.max(headerItems[i-1].w, headerItems[i-1].str.length * 3);
+                let gap = headerItems[i].x - prevRight;
+                if (gap >= 0) headerGaps.push(gap);
+            }
+            headerGaps.sort((a, b) => a - b);
+            let wordGap = headerGaps.length > 0 ? headerGaps[Math.floor(headerGaps.length * 0.3)] : 2;
+            let colGapThreshold = Math.max(wordGap * 2.5, 8);
+            
+            // Agrupar items de cabecera en clusters (cada cluster = una columna)
+            let headerClusters = [];
+            let cluster = { items: [headerItems[0]], left: headerItems[0].x };
+            for (let i = 1; i < headerItems.length; i++) {
+                let prevRight = headerItems[i-1].x + Math.max(headerItems[i-1].w, headerItems[i-1].str.length * 3);
+                let gap = headerItems[i].x - prevRight;
+                
+                if (gap < colGapThreshold) {
+                    cluster.items.push(headerItems[i]);
+                } else {
+                    cluster.right = prevRight;
+                    headerClusters.push(cluster);
+                    cluster = { items: [headerItems[i]], left: headerItems[i].x };
+                }
+            }
+            cluster.right = headerItems[headerItems.length - 1].x + Math.max(headerItems[headerItems.length - 1].w, headerItems[headerItems.length - 1].str.length * 3);
+            headerClusters.push(cluster);
+            
+            // Centro X de cada columna
+            let numCols = headerClusters.length;
+            let colCenters = headerClusters.map(c => (c.left + c.right) / 2);
+            
+            // Mapear texto de cabecera a campos del proyecto
+            let colFieldMap = new Array(numCols).fill(null);
+            for (let c = 0; c < numCols; c++) {
+                let hText = headerClusters[c].items.map(it => it.str).join(' ').toLowerCase();
+                if (hText.includes('nombre') || hText.includes('producto')) colFieldMap[c] = 'nombre';
+                else if (hText.includes('tipo')) colFieldMap[c] = 'tipo';
+                else if (hText.includes('materia')) colFieldMap[c] = 'materia';
+                else if (hText.includes('profesor') || hText.includes('responsable')) colFieldMap[c] = 'profesor';
+                else if (hText.includes('alumnado') || hText.includes('alumno')) colFieldMap[c] = 'alumnado';
+                else if (hText.includes('necesario') || (hText.includes('espacio') && !hText.includes('exposici'))) colFieldMap[c] = 'espacioNecesario';
+                else if (hText.includes('exposici') || hText.includes('lugar')) colFieldMap[c] = 'espacioExposicion';
+                else if (hText.includes('evaluaci')) colFieldMap[c] = 'clase';
+                else if (/^\d+$/.test(hText.trim()) || hText.includes('n\u00ba') || hText.includes('ordinal') || hText === 'no') colFieldMap[c] = 'numero';
+            }
+            
+            // Mapa inverso: campo -> índice de columna
+            let fieldColIndex = {};
+            for (let c = 0; c < numCols; c++) {
+                if (colFieldMap[c]) fieldColIndex[colFieldMap[c]] = c;
+            }
+            
+            console.log('[PDF Import] Columnas:', numCols, 'Mapa:', fieldColIndex);
+            console.log('[PDF Import] Cabeceras:', headerClusters.map(c => c.items.map(i => i.str).join(' ')));
+            
+            // === PASO 4: Asignar items de cada línea a columnas ===
+            function assignItemsToColumns(lineItems) {
+                let cells = new Array(numCols).fill('');
+                for (const item of lineItems) {
+                    let bestCol = 0, bestDist = Infinity;
+                    for (let c = 0; c < numCols; c++) {
+                        let dist = Math.abs(item.x - colCenters[c]);
+                        if (dist < bestDist) { bestDist = dist; bestCol = c; }
+                    }
+                    cells[bestCol] = cells[bestCol] ? cells[bestCol] + ' ' + item.str : item.str;
+                }
+                return cells.map(c => c.trim());
+            }
+            
+            // === PASO 5: Construir filas lógicas (manejar celdas multilínea) ===
+            let logicalRows = [];
+            let prevCells = null;
+            
+            for (let i = headerLineIdx + 1; i < lines.length; i++) {
+                let cells = assignItemsToColumns(lines[i]);
+                let filledCount = cells.filter(c => c.length > 0).length;
+                
+                // Si pocas columnas llenas (<=2), es continuación de fila anterior
+                if (filledCount <= 2 && prevCells) {
+                    for (let c = 0; c < numCols; c++) {
+                        if (cells[c]) {
+                            prevCells[c] = prevCells[c] ? prevCells[c] + ' ' + cells[c] : cells[c];
+                        }
+                    }
+                } else {
+                    if (prevCells) logicalRows.push(prevCells);
+                    prevCells = cells;
+                }
+            }
+            if (prevCells) logicalRows.push(prevCells);
+            
+            console.log('[PDF Import] Filas logicas:', logicalRows.length);
+            
+            // === PASO 6: Extraer proyectos de las filas lógicas ===
+            let nombreIdx = fieldColIndex.nombre !== undefined ? fieldColIndex.nombre : 0;
+            
+            for (const cells of logicalRows) {
+                let nombre = normalizarTexto(cells[nombreIdx] || '');
+                
+                // Saltar filas vacías o que no sean datos
+                if (nombre.length < 3) continue;
+                let lower = nombre.toLowerCase();
+                if (lower.includes('nombre') || lower.includes('producto') ||
+                    lower.includes('preinscripci') || lower.includes('expovilladiego') ||
+                    lower.includes('total') || lower.includes('pagina') || lower.includes('resumen')) continue;
+                
+                let tipo = normalizarTipo(normalizarTexto(cells[fieldColIndex.tipo] || ''));
+                let materia = normalizarTexto(cells[fieldColIndex.materia] || '');
+                let profesor = normalizarTexto(cells[fieldColIndex.profesor] || '');
+                let alumnado = normalizarTexto(cells[fieldColIndex.alumnado] || '');
+                let espacioNecesario = normalizarTexto(cells[fieldColIndex.espacioNecesario] || '');
+                let espacioExposicion = normalizarTexto(cells[fieldColIndex.espacioExposicion] || '');
+                let clase = normalizarTexto(cells[fieldColIndex.clase] || '');
+                
+                // Solo requiere nombre (condición relajada)
+                if (!nombre) continue;
+                
+                proyectos.push({
+                    nombre: nombre,
+                    tipo: tipo || "No especificado",
+                    materia: materia || "",
+                    profesor: profesor || "",
+                    alumnado: (alumnado === "?" || alumnado === "??") ? "" : alumnado,
+                    espacioNecesario: espacioNecesario || "N/A",
+                    espacioExposicion: espacioExposicion || "Por asignar",
+                    clase: clase || "N/A"
+                });
+            }
+            
+            console.log('[PDF Import] Proyectos extraidos:', proyectos.length);
+            if (proyectos.length > 0) {
+                console.log('[PDF Import] Primer proyecto:', JSON.stringify(proyectos[0]));
+            }
+            return { proyectos };
+        }
+
+        // MOTOR DE ANÁLISIS DE TABLAS E HIGIENIZACIÓN LATEX (100% LOCAL Y EXACTO) - LEGACY
         function analizarTextoPDFLocal(textoPdf) {
             let proyectos = [];
             

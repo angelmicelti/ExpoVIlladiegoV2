@@ -1739,19 +1739,51 @@
             // === PASO 1: Agrupar items en líneas horizontales por proximidad Y ===
             allItems.sort((a, b) => a.y - b.y || a.x - b.x);
             
-            // Calcular umbral de agrupación en Y
+            // Calcular umbral de agrupación en Y - buscar el SALTO NATURAL en la distribución bimodal
+            // La distribución tiene dos modos: gaps pequeños (intra-fila) y gaps grandes (entre-filas)
             let yDiffs = [];
             for (let i = 1; i < allItems.length; i++) {
                 if (allItems[i].page === allItems[i-1].page) {
                     let dy = Math.abs(allItems[i].y - allItems[i-1].y);
-                    if (dy > 0.5) yDiffs.push(dy);
+                    if (dy > 0.3) yDiffs.push(dy);
                 }
             }
             yDiffs.sort((a, b) => a - b);
-            // Percentil 85 para capturar el gap entre filas reales (no el ruido intra-fila)
-            let typicalLineGap = yDiffs.length > 0 ? yDiffs[Math.floor(yDiffs.length * 0.85)] : 14;
-            let rowThreshold = Math.max(typicalLineGap * 0.45, 5);
-            console.log('[PDF Import] typicalLineGap:', typicalLineGap.toFixed(1), 'rowThreshold:', rowThreshold.toFixed(1));
+            
+            // Logs de percentiles para debug
+            if (yDiffs.length > 0) {
+                console.log('[PDF Import] Y-diffs percentiles:',
+                    'p50=' + yDiffs[Math.floor(yDiffs.length * 0.5)].toFixed(1),
+                    'p75=' + yDiffs[Math.floor(yDiffs.length * 0.75)].toFixed(1),
+                    'p90=' + yDiffs[Math.floor(yDiffs.length * 0.9)].toFixed(1),
+                    'p95=' + yDiffs[Math.floor(yDiffs.length * 0.95)].toFixed(1),
+                    'p99=' + yDiffs[Math.floor(yDiffs.length * 0.99)].toFixed(1),
+                    'max=' + yDiffs[yDiffs.length - 1].toFixed(1));
+            }
+            
+            // Buscar el mayor salto relativo a partir del percentil 70 (separación natural entre modos)
+            let rowThreshold = 12; // fallback
+            let maxJumpRatio = 0;
+            let bestJumpIdx = 0;
+            let searchStart = Math.floor(yDiffs.length * 0.7);
+            
+            for (let i = searchStart; i < yDiffs.length - 1; i++) {
+                let ratio = yDiffs[i + 1] / (yDiffs[i] + 0.01);
+                if (ratio > maxJumpRatio) {
+                    maxJumpRatio = ratio;
+                    bestJumpIdx = i;
+                }
+            }
+            
+            if (maxJumpRatio > 1.5) {
+                // Salto claro encontrado: usar el punto medio como umbral
+                rowThreshold = (yDiffs[bestJumpIdx] + yDiffs[bestJumpIdx + 1]) / 2;
+            } else {
+                // No hay salto claro: usar percentil alto
+                rowThreshold = yDiffs[Math.floor(yDiffs.length * 0.92)] || 12;
+            }
+            rowThreshold = Math.max(rowThreshold, 6);
+            console.log('[PDF Import] rowThreshold calculado:', rowThreshold.toFixed(1), '(salto ratio:', maxJumpRatio.toFixed(1), ')');
             
             // Agrupar items en líneas Y
             let lines = [];
@@ -1773,50 +1805,54 @@
             
             console.log('[PDF Import] Lineas Y detectadas:', lines.length);
             
-            // === PASO 2: Detectar la fila de cabecera (soporta cabeceras multilínea) ===
+            // === PASO 2: Detectar la fila de cabecera (mejor coincidencia global) ===
             let headerLineIdx = -1;
             let headerKeywords = ['nombre', 'producto', 'tipo', 'materia', 'profesor', 'responsable', 'alumnado', 'espacio', 'necesario', 'exposici', 'lugar', 'evaluaci', 'n\u00ba', 'no'];
             
-            for (let i = 0; i < Math.min(lines.length, 80); i++) {
+            // Buscar en TODAS las líneas la que tenga más keywords de cabecera
+            let bestLineScore = 0;
+            let bestLineIdx = -1;
+            for (let i = 0; i < lines.length; i++) {
                 let text = lines[i].map(it => it.str).join(' ').toLowerCase();
                 let matches = headerKeywords.filter(k => text.includes(k));
-                
-                if (matches.length >= 2) {
-                    // Encontrada línea de cabecera - puede extenderse a líneas consecutivas
-                    headerLineIdx = i;
-                    let headerEnd = i;
-                    
-                    // Fusionar líneas consecutivas que también contengan keywords de cabecera
-                    while (headerEnd + 1 < Math.min(lines.length, i + 6)) {
-                        let nextText = lines[headerEnd + 1].map(it => it.str).join(' ').toLowerCase();
-                        let nextMatches = headerKeywords.filter(k => nextText.includes(k));
-                        if (nextMatches.length >= 1) {
-                            headerEnd++;
-                        } else {
-                            break;
-                        }
+                if (matches.length > bestLineScore) {
+                    bestLineScore = matches.length;
+                    bestLineIdx = i;
+                }
+            }
+            console.log('[PDF Import] Mejor candidata cabecera: línea', bestLineIdx, 'con', bestLineScore, 'keywords');
+            
+            if (bestLineScore >= 3) {
+                headerLineIdx = bestLineIdx;
+            }
+            
+            // Fusionar líneas consecutivas con keywords de cabecera
+            if (headerLineIdx !== -1) {
+                let headerEnd = headerLineIdx;
+                while (headerEnd + 1 < Math.min(lines.length, headerLineIdx + 6)) {
+                    let nextText = lines[headerEnd + 1].map(it => it.str).join(' ').toLowerCase();
+                    let nextMatches = headerKeywords.filter(k => nextText.includes(k));
+                    if (nextMatches.length >= 1) {
+                        headerEnd++;
+                    } else {
+                        break;
                     }
-                    
-                    // Si la cabecera abarca varias líneas, fusionar sus items
-                    if (headerEnd > i) {
-                        console.log('[PDF Import] Cabecera multilínea: líneas', i, 'a', headerEnd);
-                        let merged = [];
-                        for (let j = i; j <= headerEnd; j++) {
-                            merged = merged.concat(lines[j]);
-                        }
-                        merged.sort((a, b) => a.x - b.x);
-                        lines[i] = merged;
-                        lines.splice(i + 1, headerEnd - i);
-                    }
-                    break;
+                }
+                if (headerEnd > headerLineIdx) {
+                    console.log('[PDF Import] Cabecera multilínea: líneas', headerLineIdx, 'a', headerEnd);
+                    let merged = [];
+                    for (let j = headerLineIdx; j <= headerEnd; j++) merged = merged.concat(lines[j]);
+                    merged.sort((a, b) => a.x - b.x);
+                    lines[headerLineIdx] = merged;
+                    lines.splice(headerLineIdx + 1, headerEnd - headerLineIdx);
                 }
             }
             
             if (headerLineIdx === -1) {
-                console.warn('[PDF Import] No se encontro la fila de cabecera');
-                console.log('[PDF Import] Primeras 15 líneas para debug:');
-                for (let i = 0; i < Math.min(lines.length, 15); i++) {
-                    console.log('  Lín ' + i + ':', lines[i].map(it => it.str).join(' | '));
+                console.warn('[PDF Import] No se encontro la fila de cabecera (mejor score:', bestLineScore, ')');
+                console.log('[PDF Import] Primeras 20 líneas para debug:');
+                for (let i = 0; i < Math.min(lines.length, 20); i++) {
+                    console.log('  Lin', i, '(' + lines[i].length + ' items):', lines[i].slice(0, 10).map(it => it.str).join(' | '));
                 }
                 return { proyectos: [] };
             }

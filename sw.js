@@ -1,5 +1,5 @@
 // Service Worker - ExpoVilladiego PWA
-const CACHE_NAME = 'expovilladiego-v3.11';
+const CACHE_NAME = 'expovilladiego-v3.13d';
 
 // Assets estáticos a pre-cachear durante la instalación
 const STATIC_ASSETS = [

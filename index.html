@@ -36,20 +36,33 @@
     <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png">
     <link rel="apple-touch-icon" sizes="512x512" href="./icon-512.png">
 
-    <!-- Tailwind CSS para el diseño -->
-    <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons para iconos modernos -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- PDF.js para extraer el texto del PDF del lado del cliente de forma segura -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-    <style>
-        * { -webkit-tap-highlight-color: transparent; }
-        html, body {
-            font-family: 'Outfit', sans-serif;
-            min-height: 100dvh;
-            min-height: -webkit-fill-available;
-            overscroll-behavior: none;
+    <script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js"></script>
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Outfit', 'sans-serif'] },
+                    animation: {
+                        'fade-in': 'fadeIn 200ms ease-out',
+                        'zoom-in': 'zoomIn 200ms ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: { from: { opacity: '0' }, to: { opacity: '1' } },
+                        zoomIn: { from: { opacity: '0', transform: 'scale(0.95)' }, to: { opacity: '1', transform: 'scale(1)' } },
+                    },
+                },
+            },
         }
+    </script>
+    <!-- PDF.js: carga diferida solo cuando se importa un PDF (ahorra ~600KB RAM) -->
+    <style>
+        /* === Estilos propios (no proporcionados por Tailwind) === */
+
+        * { -webkit-tap-highlight-color: transparent; }
+        html, body { min-height: 100dvh; min-height: -webkit-fill-available; overscroll-behavior: none; }
         body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); padding-bottom: env(safe-area-inset-bottom); }
         * { scrollbar-width: thin; scrollbar-color: #cbd5e1 #f1f5f9; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -59,73 +72,43 @@
         .touch-scroll { -webkit-overflow-scrolling: touch; }
         .tabs-scroll { -webkit-overflow-scrolling: touch; scrollbar-width: none; }
         .tabs-scroll::-webkit-scrollbar { display: none; }
+        .spinner-step { display: inline-block; }
+
         @media (max-width: 640px) {
             .modal-responsive { inset: 0 !important; padding: 0 !important; border-radius: 0 !important; max-width: 100% !important; height: 100dvh; display: flex; flex-direction: column; }
-            .modal-responsive > div:last-child { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+            .modal-responsive > :last-child { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
         }
         @supports (-webkit-touch-callout: none) {
             input[type="text"], select, textarea { font-size: 16px !important; }
         }
 
-        /* Estilos específicos de impresión para asegurar PDF perfecto */
+        /* Estilos específicos de impresión */
         @media print {
-            body {
-                background: white !important;
-                color: black !important;
-                font-size: 12px;
-            }
-            header, footer, #tab-tabla, #tab-informes, #vista-tabla, .reporte-tab-btn, #btn-lanzar-pdf, section.bg-white.p-4, .no-print, #offline-bar, #btn-instalar, #modal-instalar {
-                display: none !important;
-            }
-            #print-section {
-                display: block !important;
-                visibility: visible !important;
-                width: 100% !important;
-                position: absolute;
-                left: 0;
-                top: 0;
-            }
-            .print-card {
-                background: white !important;
-                border: 1px solid #e2e8f0 !important;
-                box-shadow: none !important;
-                page-break-inside: avoid;
-                margin-bottom: 1.5rem;
-            }
-            .page-break {
-                page-break-before: always;
-            }
+            body { background: white !important; color: black !important; font-size: 12px; }
+            header, footer, #tab-tabla, #tab-informes, #vista-tabla, .reporte-tab-btn, #btn-lanzar-pdf, section.bg-white.p-4, .no-print, #offline-bar, #btn-instalar, #modal-instalar { display: none !important; }
+            #print-section { display: block !important; visibility: visible !important; width: 100% !important; position: absolute; left: 0; top: 0; }
+            .print-card { background: white !important; border: 1px solid #e2e8f0 !important; box-shadow: none !important; page-break-inside: avoid; margin-bottom: 1.5rem; }
+            .page-break { page-break-before: always; }
         }
-        #print-section {
-            display: none;
-        }
+        #print-section { display: none; }
+
         /* Animación del banner de instalación PWA */
-        @keyframes slideUp {
-            from { transform: translateY(100%); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-        @keyframes fadeOut {
-            from { opacity: 1; }
-            to { opacity: 0; transform: translateY(20px); }
-        }
-        .pwa-banner-animate {
-            animation: slideUp 0.5s ease-out;
-        }
-        .pwa-banner-hide {
-            animation: fadeOut 0.3s ease-in forwards;
-        }
-        /* Indicador de estado offline */
-        .offline-indicator {
-            transition: all 0.3s ease;
-        }
-        /* Indicador de estado de sincronización */
-        @keyframes syncPulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-        .sync-dot-syncing {
-            animation: syncPulse 1.5s ease-in-out infinite;
-        }
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; transform: translateY(20px); } }
+        .pwa-banner-animate { animation: slideUp 0.5s ease-out; }
+        .pwa-banner-hide { animation: fadeOut 0.3s ease-in forwards; }
+
+        /* Indicador de estado offline / sincronización */
+        .offline-indicator { transition: all 0.3s ease; }
+        @keyframes syncPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .sync-dot-syncing { animation: syncPulse 1.5s ease-in-out infinite; }
+
+        /* Animación de entrada para modales (patrón tailwindcss-animate) */
+        .animate-in { animation-duration: 200ms; animation-fill-mode: both; }
+        .fade-in { animation-name: fadeIn; }
+        .zoom-in { animation-name: zoomIn; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes zoomIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 flex flex-col">
@@ -134,7 +117,7 @@
     <header id="app-header" class="bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-800 text-white shadow-md">
         <div class="max-w-7xl mx-auto px-4 py-4 sm:py-6 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-3 sm:gap-4" style="padding-top: max(1rem, env(safe-area-inset-top));">
             <div class="flex items-center gap-3">
-                <div class="bg-white/10 p-2 sm:p-2.5 rounded-xl backdrop-blur-sm border border-white/20">
+                <div class="bg-white/10 p-2 sm:p-2.5 rounded-xl border border-white/20">
                     <i data-lucide="layers" class="h-6 w-6 sm:h-8 sm:w-8 text-yellow-300"></i>
                 </div>
                 <div>
@@ -471,7 +454,7 @@
     </main>
 
     <!-- MODAL DE VISTA PREVIA DE KPI -->
-    <div id="modal-kpi-previa" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div id="modal-kpi-previa" class="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 modal-responsive">
             <div id="kpi-previa-header" class="bg-gradient-to-r from-blue-700 to-indigo-800 text-white px-6 py-4 flex justify-between items-center">
                 <h2 id="kpi-previa-titulo" class="text-lg font-bold flex items-center gap-2"></h2>
@@ -501,7 +484,7 @@
     </footer>
 
     <!-- MODAL DE CONFIGURACIÓN DE PDF E IMPRESIÓN -->
-    <div id="modal-pdf" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div id="modal-pdf" class="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
             <div class="bg-gradient-to-r from-indigo-700 to-violet-800 text-white px-6 py-4 flex justify-between items-center">
                 <h2 class="text-lg font-bold flex items-center gap-2">
@@ -560,7 +543,7 @@
     </div>
 
     <!-- MODAL DE IMPORTACIÓN / SINCRONIZACIÓN DE ARCHIVO PDF -->
-    <div id="modal-importar-pdf" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div id="modal-importar-pdf" class="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
             <div class="bg-gradient-to-r from-blue-700 to-indigo-800 text-white px-6 py-4 flex justify-between items-center">
                 <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="file-up" class="h-5 w-5"></i> Sincronizar con Dossier PDF</h2>
@@ -588,7 +571,7 @@
     </div>
 
     <!-- PANTALLA DE CARGA / PROGRESO DEL ANÁLISIS IA (OVERLAY) -->
-    <div id="overlay-analisis" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div id="overlay-analisis" class="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden p-6 space-y-6 text-center">
             <div class="relative w-16 h-16 mx-auto">
                 <div class="absolute inset-0 rounded-full border-4 border-indigo-100"></div>
@@ -607,7 +590,7 @@
     </div>
 
     <!-- MODAL DE ÉXITO DE SINCRONIZACIÓN -->
-    <div id="modal-exito-sincro" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div id="modal-exito-sincro" class="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden p-6 text-center space-y-5 animate-in fade-in zoom-in duration-200">
             <div class="bg-emerald-50 text-emerald-600 w-12 h-12 rounded-full flex items-center justify-center mx-auto border border-emerald-100"><i data-lucide="check-check" class="h-6 w-6"></i></div>
             <div class="space-y-1.5">
@@ -629,7 +612,7 @@
     </div>
 
     <!-- MODAL DE GESTIÓN DE AÑOS ESCOLARES -->
-    <div id="modal-años" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div id="modal-años" class="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
             <div class="bg-gradient-to-r from-indigo-700 to-violet-800 text-white px-6 py-4 flex justify-between items-center">
                 <h2 class="text-lg font-bold flex items-center gap-2">
@@ -653,7 +636,7 @@
     </div>
 
     <!-- MODAL DE IMPORTACIÓN CSV -->
-    <div id="modal-importar-csv" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div id="modal-importar-csv" class="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
             <div class="bg-gradient-to-r from-blue-700 to-indigo-800 text-white px-6 py-4 flex justify-between items-center">
                 <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="upload" class="h-5 w-5"></i> Importar CSV</h2>
@@ -699,7 +682,7 @@
     </div>
 
     <!-- MODAL DE INSTRUCCIONES DE INSTALACIÓN -->
-    <div id="modal-instalar" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4 hidden">
+    <div id="modal-instalar" class="fixed inset-0 bg-slate-900/50 z-[60] flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div class="bg-gradient-to-r from-indigo-600 to-violet-700 text-white px-6 py-4 flex justify-between items-center">
                 <h2 class="text-lg font-bold flex items-center gap-2">
@@ -717,7 +700,7 @@
     </div>
 
     <!-- MODAL PARA AÑADIR / EDITAR PRODUCTO -->
-    <div id="modal-producto" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div id="modal-producto" class="fixed inset-0 bg-slate-900/40 z-50 flex items-center justify-center p-4 hidden">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200 modal-responsive">
             <div class="bg-gradient-to-r from-indigo-700 to-violet-800 text-white px-6 py-4 flex justify-between items-center">
                 <h2 id="modal-titulo" class="text-lg font-bold">Añadir Nuevo Producto</h2>
@@ -1384,9 +1367,30 @@
             renderizarTabla();
             generarTodosLosInformes();
             renderLucideIcons();
-            if (typeof pdfjsLib !== 'undefined') {
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+            // PDF.js: carga diferida — solo se carga cuando el usuario importa un PDF
+            window._pdfjsReady = false;
+            function cargarPDFjs() {
+                return new Promise((resolve, reject) => {
+                    if (window._pdfjsReady && typeof pdfjsLib !== 'undefined') { resolve(); return; }
+                    const s = document.createElement('script');
+                    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+                    s.onload = () => {
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+                        window._pdfjsReady = true;
+                        resolve();
+                    };
+                    s.onerror = () => reject(new Error('No se pudo cargar PDF.js'));
+                    document.head.appendChild(s);
+                });
             }
+            // Cerrar modales al hacer clic fuera del contenido (overlay)
+            document.querySelectorAll('[id^="modal-"], #overlay-analisis').forEach(function(modal) {
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        modal.classList.add('hidden');
+                    }
+                });
+            });
             registrarServiceWorker();
             configurarEstadoConexion();
 
@@ -1652,15 +1656,20 @@
         }
 
         // PROCESAMIENTO LOCAL DE PDF MEDIANTE HEURÍSTICA Y EXPRESIONES REGULARES (SIN API EXTERNA PARA EVITAR ERROR 403)
-        function procesarArchivoSeleccionado(input) {
+        async function procesarArchivoSeleccionado(input) {
             const file = input.files[0];
             if (!file) return;
 
             cerrarModalImportar();
             abrirOverlayAnalisis();
             
-            // Paso 1: Cambiar UI a Lectura del PDF
+            // Paso 1: Cargar PDF.js (si aún no está cargado) y cambiar UI
             actualizarPasoProgreso('step-lectura', 'loading');
+            try { await cargarPDFjs(); } catch (e) {
+                alert('No se pudo cargar la librería de procesamiento PDF. Verifica tu conexión a Internet e inténtalo de nuevo.');
+                cerrarOverlayAnalisis();
+                return;
+            }
 
             const reader = new FileReader();
             reader.onload = async function() {

@@ -1434,7 +1434,7 @@
                 var items = db.map(function(p) { return { nombre: p.nombre, detalle: (p.tipo || '') + (p.materia ? ' · ' + p.materia : ''), clase: p.clase }; });
                 if (items.length === 0) { lista.classList.add('hidden'); vacio.classList.remove('hidden'); }
                 else {
-                    items.sort(function(a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
+                    items.sort(function(a, b) { return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }); });
                     lista.innerHTML = items.map(function(it, i) {
                         return '<div class="px-5 py-3 hover:bg-slate-50 transition flex items-center gap-3"><span class="text-xs font-bold text-slate-300 w-6 text-right shrink-0">' + (i + 1) + '</span><div class="min-w-0"><p class="text-sm font-semibold text-slate-800 truncate">' + it.nombre + '</p><p class="text-xs text-slate-400 truncate">' + it.detalle + (it.clase ? ' · ' + it.clase : '') + '</p></div></div>';
                     }).join('');
@@ -1446,7 +1446,7 @@
                 var mapa = {};
                 db.forEach(function(p) { if (p.tipo) p.tipo.split('/').forEach(function(t) { var k = t.trim(); if (k) { if (!mapa[k]) mapa[k] = 0; mapa[k]++; } }); });
                 var items = Object.keys(mapa).map(function(k) { return { nombre: k, count: mapa[k] }; });
-                items.sort(function(a, b) { return b.count - a.count || a.nombre.localeCompare(b.nombre, 'es'); });
+                items.sort(function(a, b) { return b.count - a.count || a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }); });
                 if (items.length === 0) { lista.classList.add('hidden'); vacio.classList.remove('hidden'); }
                 else {
                     lista.innerHTML = items.map(function(it) {
@@ -1460,7 +1460,7 @@
                 var mapa = {};
                 db.forEach(function(p) { if (p.profesor) p.profesor.split(/[,\/]/).forEach(function(pr) { var k = normalizarNombreProfesor(pr.replace(/\s+/g, ' ').trim()); if (k && k !== 'No especificado') { if (!mapa[k.toLowerCase()]) mapa[k.toLowerCase()] = { nombre: k, count: 0 }; mapa[k.toLowerCase()].count++; } }); });
                 var items = Object.keys(mapa).map(function(k) { return { nombre: mapa[k].nombre, count: mapa[k].count }; });
-                items.sort(function(a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
+                items.sort(function(a, b) { return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }); });
                 if (items.length === 0) { lista.classList.add('hidden'); vacio.classList.remove('hidden'); }
                 else {
                     lista.innerHTML = items.map(function(it) {
@@ -1474,7 +1474,7 @@
                 var mapa = {};
                 db.forEach(function(p) { if (p.espacioExposicion) p.espacioExposicion.split('/').forEach(function(e) { var k = e.trim(); if (k) { if (!mapa[k]) mapa[k] = 0; mapa[k]++; } }); });
                 var items = Object.keys(mapa).map(function(k) { return { nombre: k, count: mapa[k] }; });
-                items.sort(function(a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
+                items.sort(function(a, b) { return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }); });
                 if (items.length === 0) { lista.classList.add('hidden'); vacio.classList.remove('hidden'); }
                 else {
                     lista.innerHTML = items.map(function(it) {
@@ -1487,7 +1487,7 @@
                 titulo.innerHTML = '<i data-lucide="graduation-cap" class="h-5 w-5"></i> Alumnado Participante';
                 var mapa = {};
                 db.forEach(function(p) { if (p.alumnado) { p.alumnado.split(',').forEach(function(al) { var a = al.trim(); if (a) { var k = a.toLowerCase(); if (!mapa[k]) mapa[k] = { nombre: a, proyectos: [] }; if (!mapa[k].proyectos.some(function(proj) { return proj.id === p.id; })) mapa[k].proyectos.push(p); } }); } });
-                var items = Object.values(mapa).sort(function(a, b) { return a.nombre.localeCompare(b.nombre, 'es'); });
+                var items = Object.values(mapa).sort(function(a, b) { return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }); });
                 if (items.length === 0) { lista.classList.add('hidden'); vacio.classList.remove('hidden'); }
                 else {
                     lista.innerHTML = items.map(function(it) {
@@ -1570,9 +1570,9 @@
                 });
             });
 
-            Array.from(tiposSet).sort().forEach(t => selectTipo.innerHTML += `<option value="${t}">${t}</option>`);
-            Array.from(espaciosSet).sort().forEach(e => selectEspacio.innerHTML += `<option value="${e}">${e}</option>`);
-            Array.from(profesoresSet).sort().forEach(pr => selectProfesor.innerHTML += `<option value="${pr}">${pr}</option>`);
+            Array.from(tiposSet).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).forEach(t => selectTipo.innerHTML += `<option value="${t}">${t}</option>`);
+            Array.from(espaciosSet).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).forEach(e => selectEspacio.innerHTML += `<option value="${e}">${e}</option>`);
+            Array.from(profesoresSet).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).forEach(pr => selectProfesor.innerHTML += `<option value="${pr}">${pr}</option>`);
 
             selectTipo.value = prevTipo; selectEspacio.value = prevEspacio; selectProfesor.value = prevProfesor;
         }
@@ -2433,7 +2433,7 @@
             const mapaTipos = {};
             getDatabase().forEach(p => { const t = p.tipo || 'Sin definir'; if (!mapaTipos[t]) mapaTipos[t] = []; mapaTipos[t].push(p); });
 
-            Object.keys(mapaTipos).sort().forEach(tipo => {
+            Object.keys(mapaTipos).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).forEach(tipo => {
                 let html = '';
                 if (mostrarProyectos) {
                     html = `<div class="max-h-60 overflow-y-auto space-y-1 pt-1.5 border-t border-slate-100">
@@ -2493,7 +2493,7 @@
             const mapaAlumnos = {};
             getDatabase().forEach(p => { if (p.alumnado) { p.alumnado.split(',').forEach(al => { const a = al.trim(); if (a) { const k = a.toLowerCase(); if (!mapaAlumnos[k]) mapaAlumnos[k] = { nombre: a, proyectos: [] }; if (!mapaAlumnos[k].proyectos.some(proj => proj.id === p.id)) mapaAlumnos[k].proyectos.push(p); } }); } });
 
-            const alumnosList = Object.values(mapaAlumnos).sort((a, b) => a.nombre.localeCompare(b.nombre));
+            const alumnosList = Object.values(mapaAlumnos).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
             const duplicadosCount = alumnosList.filter(al => al.proyectos.length > 1).length;
 
             let html = `<div class="flex flex-col sm:flex-row gap-3 mb-4"><div class="text-xs font-semibold text-slate-700 bg-indigo-50 p-3 rounded-lg border border-indigo-200 text-left flex items-center gap-2"><i data-lucide="graduation-cap" class="h-4 w-4 text-indigo-600"></i> Se han registrado <strong>${alumnosList.length} alumno(s)</strong> en total.</div><div class="text-xs font-semibold text-amber-800 bg-amber-50 p-3 rounded-lg border border-amber-200 text-left flex items-center gap-2"><i data-lucide="alert-triangle" class="h-4 w-4 text-amber-600"></i> Se han identificado <strong>${duplicadosCount} solape(s)</strong> de alumnos en stands concurrentes.</div></div><div class="grid grid-cols-2 gap-4">`;
@@ -2540,21 +2540,21 @@
 
         function obtenerPrintTipos(conProy, dataset) {
             const m = {}; dataset.forEach(p => { const t = p.tipo || 'N/A'; if (!m[t]) m[t] = []; m[t].push(p); });
-            return Object.keys(m).sort().map(t => `<div class="print-card p-4 rounded-xl border border-slate-200"><div class="flex justify-between items-center font-bold text-slate-800"><span>Tipo: ${t}</span><span class="text-indigo-700">${m[t].length} Proyectos</span></div>${conProy ? `<table class="w-full text-left text-xs mt-2 border-t border-slate-100"><thead><tr class="text-slate-400 font-bold uppercase text-[10px]"><th class="py-1">Proyecto</th><th class="py-1">Materia</th><th class="py-1">Aula</th></tr></thead><tbody class="divide-y divide-slate-100">${m[t].map(p => `<tr><td class="py-1 font-bold text-slate-800">${p.nombre}</td><td class="py-1 text-slate-600">${p.materia}</td><td class="py-1 text-slate-600">${p.espacioExposicion}</td></tr>`).join('')}</tbody></table>` : ''}</div>`).join('');
+            return Object.keys(m).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).map(t => `<div class="print-card p-4 rounded-xl border border-slate-200"><div class="flex justify-between items-center font-bold text-slate-800"><span>Tipo: ${t}</span><span class="text-indigo-700">${m[t].length} Proyectos</span></div>${conProy ? `<table class="w-full text-left text-xs mt-2 border-t border-slate-100"><thead><tr class="text-slate-400 font-bold uppercase text-[10px]"><th class="py-1">Proyecto</th><th class="py-1">Materia</th><th class="py-1">Aula</th></tr></thead><tbody class="divide-y divide-slate-100">${m[t].map(p => `<tr><td class="py-1 font-bold text-slate-800">${p.nombre}</td><td class="py-1 text-slate-600">${p.materia}</td><td class="py-1 text-slate-600">${p.espacioExposicion}</td></tr>`).join('')}</tbody></table>` : ''}</div>`).join('');
         }
         function obtenerPrintProfesores(conProy, dataset) {
             const m = {}; dataset.forEach(p => { if (p.profesor) p.profesor.split(/[,\/]/).forEach(pr => { const prL = normalizarNombreProfesor(pr.replace(/\s+/g, ' ').trim()); if (prL && prL !== 'No especificado') { var key = prL.toLowerCase(); if (!m[key]) m[key] = { nombre: prL, proyectos: [] }; m[key].proyectos.push(p); }}); });
-            return Object.keys(m).sort().map(key => { var pr = m[key].nombre; return `<div class="print-card p-4 rounded-xl border border-slate-200"><div class="flex justify-between items-center font-bold text-slate-800"><span>Tutor: ${pr}</span><span class="text-indigo-700">${m[key].proyectos.length} Stands</span></div>${conProy ? `<table class="w-full text-left text-xs mt-2 border-t border-slate-100"><thead><tr class="text-slate-400 font-bold uppercase text-[10px]"><th class="py-1">Stand</th><th class="py-1">Materia</th><th class="py-1">Ubicación</th></tr></thead><tbody class="divide-y divide-slate-100">${m[key].proyectos.map(p => `<tr><td class="py-1 font-bold text-slate-800 text-left">${p.nombre}</td><td class="py-1 text-slate-600 text-left">${p.materia}</td><td class="py-1 text-slate-600 text-left">${p.espacioExposicion}</td></tr>`).join('')}</tbody></table>` : ''}</div>`; }).join('');
+            return Object.keys(m).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).map(key => { var pr = m[key].nombre; return `<div class="print-card p-4 rounded-xl border border-slate-200"><div class="flex justify-between items-center font-bold text-slate-800"><span>Tutor: ${pr}</span><span class="text-indigo-700">${m[key].proyectos.length} Stands</span></div>${conProy ? `<table class="w-full text-left text-xs mt-2 border-t border-slate-100"><thead><tr class="text-slate-400 font-bold uppercase text-[10px]"><th class="py-1">Stand</th><th class="py-1">Materia</th><th class="py-1">Ubicación</th></tr></thead><tbody class="divide-y divide-slate-100">${m[key].proyectos.map(p => `<tr><td class="py-1 font-bold text-slate-800 text-left">${p.nombre}</td><td class="py-1 text-slate-600 text-left">${p.materia}</td><td class="py-1 text-slate-600 text-left">${p.espacioExposicion}</td></tr>`).join('')}</tbody></table>` : ''}</div>`; }).join('');
         }
         function obtenerPrintEspacios(conProy, dataset) {
             const m = {}; dataset.forEach(p => { if (p.espacioExposicion) p.espacioExposicion.split('/').forEach(e => { const eL = e.trim(); if (eL) { if (!m[eL]) m[eL] = []; m[eL].push(p); }}); });
-            return Object.keys(m).sort().map(e => `<div class="print-card p-4 rounded-xl border border-slate-200"><div class="flex justify-between items-center font-bold text-slate-800"><span>Espacio: ${e}</span><span class="text-indigo-700">${m[e].length} asignaciones</span></div>${conProy ? `<ul class="mt-2 space-y-1 text-xs text-slate-600 pl-4 list-disc">${m[e].map(p => `<li><strong>${p.nombre}</strong> (${p.clase} - Tutor: ${p.profesor})</li>`).join('')}</ul>` : ''}</div>`).join('');
+            return Object.keys(m).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })).map(e => `<div class="print-card p-4 rounded-xl border border-slate-200"><div class="flex justify-between items-center font-bold text-slate-800"><span>Espacio: ${e}</span><span class="text-indigo-700">${m[e].length} asignaciones</span></div>${conProy ? `<ul class="mt-2 space-y-1 text-xs text-slate-600 pl-4 list-disc">${m[e].map(p => `<li><strong>${p.nombre}</strong> (${p.clase} - Tutor: ${p.profesor})</li>`).join('')}</ul>` : ''}</div>`).join('');
         }
 
         function obtenerPrintAlumnado(dataset) {
             const mapaAlumnos = {};
             dataset.forEach(p => { if (p.alumnado) { p.alumnado.split(',').forEach(al => { const a = al.trim(); if (a) { const k = a.toLowerCase(); if (!mapaAlumnos[k]) mapaAlumnos[k] = { nombre: a, proyectos: [] }; if (!mapaAlumnos[k].proyectos.some(proj => proj.id === p.id)) mapaAlumnos[k].proyectos.push(p); } }); } });
-            const alumnosList = Object.values(mapaAlumnos).sort((a, b) => a.nombre.localeCompare(b.nombre));
+            const alumnosList = Object.values(mapaAlumnos).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
             const duplicados = alumnosList.filter(al => al.proyectos.length > 1);
             let html = `<p class="text-xs font-bold text-slate-600 mb-3">Total alumnos: ${alumnosList.length} | Con solapes: ${duplicados.length}</p>`;
             html += '<table class="w-full text-left text-xs border-t border-slate-200 mt-2"><thead><tr class="text-slate-400 font-bold uppercase text-[10px]"><th class="py-1">Alumno/a</th><th class="py-1">Nº Proyectos</th><th class="py-1">Stands</th><th class="py-1">Observación</th></tr></thead><tbody class="divide-y divide-slate-100">';

@@ -6,17 +6,23 @@ const STATIC_ASSETS = [
   './',
   './index.html',
   './manifest.json',
+  './icon-16.png',
+  './icon-32.png',
+  './icon-180.png',
   './icon-192.png',
   './icon-512.png',
+  './icon-1024.png',
   './favicon-16.png',
-  './favicon-32.png',
-  './icon-180.png'
+  './favicon-32.png'
 ];
 
 // URLs externas (CDN) que también cachearemos
 const CDN_ASSETS = [
   'https://cdn.tailwindcss.com',
-  'https://unpkg.com/lucide@latest',
+  'https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js',
+  'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js'
 ];
